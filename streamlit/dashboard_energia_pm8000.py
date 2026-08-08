@@ -219,7 +219,7 @@ if "Modelo 1" in modelo_dashboard:
     col_chart1, col_chart2 = st.columns([2, 1])
     
     with col_chart1:
-        st.subheader("⚡ Demanda Horaria por Equipos (Top 10)")
+        st.subheader("⚡ Demanda Horaria")
         top_circuitos = df_filtered.groupby('Circuito')['Energia_kWh'].sum().nlargest(10).index
         df_top = df_filtered[df_filtered['Circuito'].isin(top_circuitos)]
         

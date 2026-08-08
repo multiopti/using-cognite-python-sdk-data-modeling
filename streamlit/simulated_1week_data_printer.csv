@@ -1,4 +1,4 @@
-Fecha,Printer,Shift,Hora,Producción x hora,Producción acumulada,Retrac-x-hora,Retrac acumulado,Blow of
+Fecha,Printer,Turno,Hora,Producción x hora,Producción acumulada,Retrac x hora,Retrac acumulado,Blow off
 2026-07-12,L1,5AM-5PM,5 a 6,45596,45596,23,23,25
 2026-07-12,L1,5AM-5PM,6 a 7,54835,100431,2,25,2
 2026-07-12,L1,5AM-5PM,7 a 8,58334,158765,2,27,6
