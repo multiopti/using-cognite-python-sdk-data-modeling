@@ -7,8 +7,6 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cognite.client import AsyncCogniteClient
-from cognite.client.data_classes import Event
-from cognite.client.data_classes import EventWrite
 
 # ---------------------------------------------------------
 # 1. Page & Layout Configuration
@@ -58,9 +56,10 @@ def get_cognite_client():
 
 client = get_cognite_client()
 
+# Updated to mirror Jupyter Notebook asset identifiers
 MACHINE_GROUPS = {
     "MINSTER": ["MINSTER_L1", "MINSTER_L3"],
-    "DI": ["DI11", "DI12", "DI14", "DI15", "DI18"],
+    "DI": ["DI11", "DI12", "DI14", "DI15", "DI17", "DI18"],  # Removed DI13 & DI16
     "STANDUM": [
         "STANDUM31", "STANDUM32", "STANDUM33", "STANDUM34", 
         "STANDUM35", "STANDUM36", "STANDUM37", "STANDUM38"
@@ -88,19 +87,6 @@ NIGHT_HOURS = [
     "11PM-12AM", "12AM-1AM", "1AM-2AM", "2AM-3AM", "3AM-4AM", "4AM-5AM"
 ]
 
-INCIDENT_TYPES = [
-    "Operación estándar",
-    "Falla Mecánica",
-    "Falla Eléctrica",
-    "Falta de Material / Insumos",
-    "Mantenimiento Programado",
-    "Ajuste de Calidad",
-    "Trancamiento / Obstrucción",
-    "Cambio de Formato",
-    "Limpieza / Sanitización",
-    "Otros"
-]
-
 LOGO_URL = "https://static.wikia.nocookie.net/logopedia/images/d/d4/EmpresasPolar2010.png/revision/latest?cb=20200403161102&path-prefix=es"
 
 # ---------------------------------------------------------
@@ -126,9 +112,6 @@ if "applied_filters" not in st.session_state:
         "turno": "5AM-5PM"
     }
 
-if "saved_observations" not in st.session_state:
-    st.session_state.saved_observations = {}
-
 def apply_filters_callback():
     m_type_sel = st.session_state.get("input_m_type", "STANDUM")
     avail = MACHINE_GROUPS.get(m_type_sel, [])
@@ -148,8 +131,6 @@ active_m_type = applied["m_type"]
 active_machine_label = applied["machine_label"]
 active_machine_code = applied["machine_code"]
 active_turno = applied["turno"]
-
-current_obs_key = f"{active_machine_code}_{active_fecha}_{active_turno}"
 
 # ---------------------------------------------------------
 # 5. Operational Filter Bar
@@ -257,37 +238,8 @@ def get_meta_str(meta: dict, keys: list, default: str = "") -> str:
     return default
 
 # ---------------------------------------------------------
-# 8. Async CDF Data Loaders & CDF Writer Function
+# 8. Async CDF Data Loaders
 # ---------------------------------------------------------
-async def save_observations_to_cdf(edited_df: pd.DataFrame, machine_code: str, fecha_str: str, turno_label: str):
-    fecha_clean = fecha_str.replace("-", "")
-    shift_code = SHIFT_MAP.get(turno_label, 'day')
-    prefix = f"report_{machine_code.lower()}_{fecha_clean}_{shift_code}"
-
-    slot_map = dict(zip(full_shift_df['Hora'], full_shift_df['Slot']))
-
-    events_to_upsert = []
-    for _, row in edited_df.iterrows():
-        hora_val = row['Hora']
-        obs_val = row['Observaciones']
-        slot_num = slot_map.get(hora_val, 1)
-        ext_id = f"{prefix}_entry_{slot_num}"
-
-        events_to_upsert.append(
-            EventWrite(
-                external_id=ext_id,
-                type="Production Report",
-                metadata={
-                    "observations": obs_val,
-                    "observaciones": obs_val,
-                    "obs": obs_val
-                }
-            )
-        )
-
-    if events_to_upsert:
-        await client.events.upsert(events_to_upsert, mode="patch")
-
 async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: str, turno_label: str) -> pd.DataFrame:
     fecha_clean = fecha_str.replace("-", "")
     shift_code = SHIFT_MAP.get(turno_label, 'day')
@@ -295,6 +247,7 @@ async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: 
     m_code_clean = machine_code.lower()
     alt_codes = [m_code_clean]
     
+    # Bi-directional resolution for all machine prefixes
     if "minster" in m_code_clean or "min" in m_code_clean:
         if "1" in m_code_clean:
             alt_codes.extend(["minster_l1", "min11", "minster11"])
@@ -419,7 +372,7 @@ async def fetch_heartbeat_status() -> str:
         return f"Error leyendo heartbeat ({e})"
     return "Sin datos"
 
-# Execute CDF Queries
+# Execute Queries
 existing_df = pd.DataFrame()
 try:
     existing_df = await load_shift_report_from_cdf(
@@ -432,7 +385,7 @@ except Exception as e:
     st.error(f"Error consultando eventos de CDF para {active_machine_label}: {e}")
 
 # ---------------------------------------------------------
-# 9. Merge Timeline with Event Data & Session Overrides
+# 9. Merge Timeline with Event Data
 # ---------------------------------------------------------
 if not existing_df.empty:
     if 'Hora' in existing_df.columns:
@@ -443,13 +396,13 @@ else:
 
 if active_m_type == "PRINTER":
     num_cols = ['Producción x hora', 'Retrac-x-hora', 'Blow of', 'Tiempo de parada']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
 elif active_m_type == "MINSTER":
     num_cols = ['Golpes Bobina', 'Golpes Turno', 'Tiempo Parada (min)']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
 elif active_m_type == "ISPRAY":
     num_cols = ['Producción x hora', 'Tiempo Parada (min)']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
 else:
     num_cols = [
         'PROD. LATAS', 'LAT CORTAS', 'TRANC TRIMMER',
@@ -457,7 +410,7 @@ else:
         'Tiempo prom de parada x lat cort (min)', 'Tiempo prom de parada x tranc trim (min)',
         'Tiempo parada (min)', 'Merma (kg)'
     ]
-    str_cols = {'% Merma': '0.00%', '% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
+    str_cols = {'% Merma': '0.00%', '% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
 
 for col in num_cols:
     if col not in filtered_df.columns:
@@ -473,11 +426,6 @@ for col, default_val in str_cols.items():
 
 filtered_df = filtered_df.sort_values('Slot').reset_index(drop=True)
 filtered_df['Hora'] = filtered_df['Hora'].astype(str)
-
-# Override with in-memory session cache if saved during current session
-if current_obs_key in st.session_state.saved_observations:
-    saved_map = st.session_state.saved_observations[current_obs_key]
-    filtered_df['Observaciones'] = filtered_df['Hora'].map(saved_map).fillna(filtered_df['Observaciones'])
 
 def get_avg_efficiency(df: pd.DataFrame) -> float:
     eff_series = df['% Eficiencia'].astype(str).str.replace('%', '').str.strip()
@@ -828,13 +776,14 @@ else:
             mode="gauge+number", value=total_downtime_di, number={'suffix': ' min'},
             title={'text': "Tiempo Parada Total", 'font': {'size': 13}},
             gauge={'axis': {'range': [0, 720], 'tickfont': {'size': 10}}, 'bar': {'color': "#515151"},
-                   'steps': [{'range': [0, 360], 'color': "#E6E6E6"}, {'range': [360, 720], 'color': "#FFCCCC"}]}
+                   'steps': [{'range': [0, 360], 'color': "#E6E6E6"}, {'range': [360, 720], 'color': "#FFCCCC"}],
+                   'threshold': {'line': {'color': "red", 'width': 3}, 'thickness': 0.75, 'value': 360}}
         ))
         fig_stop.update_layout(height=200, paper_bgcolor='white', margin=dict(t=50, b=10, l=25, r=25))
         st.plotly_chart(fig_stop, use_container_width=True)
 
 # ---------------------------------------------------------
-# 12. Interactive Format Display Table & CDF Save Handler
+# 12. Format Display Table
 # ---------------------------------------------------------
 st.markdown("### Detalle Horario del Turno")
 
@@ -865,48 +814,11 @@ else:
 
 display_df = display_df.astype(str)
 
-display_df['Observaciones'] = display_df['Observaciones'].apply(
-    lambda x: x if x in INCIDENT_TYPES else "Operación estándar"
-)
-
-# Render Interactive Data Editor
-edited_df = st.data_editor(
+st.dataframe(
     display_df,
-    column_config={
-        "Observaciones": st.column_config.SelectboxColumn(
-            "Observaciones / Incidencia",
-            help="Seleccione el tipo de incidencia u observación ocurrida en este slot",
-            width="large",
-            options=INCIDENT_TYPES,
-            required=True,
-        )
-    },
-    disabled=[col for col in display_df.columns if col != "Observaciones"],
     use_container_width=True,
-    hide_index=True,
-    key=f"editor_{current_obs_key}"
+    hide_index=True
 )
-
-# CDF Save Handler
-if st.button("Guardar Observaciones 💾"):
-    try:
-        # 1. Update CDF directly
-        await save_observations_to_cdf(
-            edited_df=edited_df, 
-            machine_code=active_machine_code, 
-            fecha_str=active_fecha, 
-            turno_label=active_turno
-        )
-        
-        # 2. Update local session state cache
-        st.session_state.saved_observations[current_obs_key] = dict(
-            zip(edited_df['Hora'], edited_df['Observaciones'])
-        )
-        
-        st.toast("¡Observaciones guardadas exitosamente en CDF!", icon="🚀")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Error guardando observaciones en Cognite Data Fusion: {e}")
 
 # ---------------------------------------------------------
 # 13. Edge Heartbeat Footer
