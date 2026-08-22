@@ -16,18 +16,18 @@ MACHINE_GROUPS = {
 }
 
 SHIFT_MAP = {
-    '5AM-5PM': 'day',
-    '5PM-5AM': 'night'
+    '6AM-6PM': 'day',
+    '6PM-6AM': 'night'
 }
 
 DAY_HOURS = [
-    "5AM-6AM", "6AM-7AM", "7AM-8AM", "8AM-9AM", "9AM-10AM", "10AM-11AM",
-    "11AM-12PM", "12PM-1PM", "1PM-2PM", "2PM-3PM", "3PM-4PM", "4PM-5PM"
+    "6AM-7AM", "7AM-8AM", "8AM-9AM", "9AM-10AM", "10AM-11AM", "11AM-12PM",
+    "12PM-1PM", "1PM-2PM", "2PM-3PM", "3PM-4PM", "4PM-5PM", "5PM-6PM"
 ]
 
 NIGHT_HOURS = [
-    "5PM-6PM", "6PM-7PM", "7PM-8PM", "8PM-9PM", "9PM-10PM", "10PM-11PM",
-    "11PM-12AM", "12AM-1AM", "1AM-2AM", "2AM-3AM", "3AM-4AM", "4AM-5AM"
+    "6PM-7PM", "7PM-8PM", "8PM-9PM", "9PM-10PM", "10PM-11PM", "11PM-12AM",
+    "12AM-1AM", "1AM-2AM", "2AM-3AM", "3AM-4AM", "4AM-5AM", "5AM-6AM"
 ]
 
 INCIDENTES_OPCIONES = [
@@ -92,8 +92,6 @@ def get_display_columns(m_type: str) -> list:
     else:
         return [
             'Hora', 'PROD. LATAS', 'LAT CORTAS', 'TRANC TRIMMER',
-            'LAT x LAT CORTAS', 'LAT x TRANC TRIM',
-            'Tiempo prom de parada x lat cort (min)', 'Tiempo prom de parada x tranc trim (min)',
-            'Tiempo parada (min)', 'Merma (kg)',
+            'Merma (kg)',
             '% Merma', '% Eficiencia', 'Observaciones'
         ]

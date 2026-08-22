@@ -47,7 +47,7 @@ if "applied_filters" not in st.session_state:
         "m_type": "STANDUM",
         "machine_label": "STANDUM32",
         "machine_code": "standum32",
-        "turno": "5AM-5PM"
+        "turno": "6AM-6PM"
     }
 
 def apply_filters_callback():
@@ -60,7 +60,7 @@ def apply_filters_callback():
         "m_type": m_type_sel,
         "machine_label": m_label,
         "machine_code": m_label.lower(),
-        "turno": st.session_state.get("input_turno", "5AM-5PM")
+        "turno": st.session_state.get("input_turno", "6AM-6PM")
     }
 
 applied = st.session_state.applied_filters
@@ -145,7 +145,7 @@ with filter_col3:
     )
 
 with filter_col4:
-    turno_opts = ["5AM-5PM", "5PM-5AM"]
+    turno_opts = ["6AM-6PM", "6PM-6AM"]
     t_index = turno_opts.index(active_turno) if active_turno in turno_opts else 0
     st.selectbox("Turno", options=turno_opts, index=t_index, key="input_turno")
 
@@ -179,7 +179,7 @@ except Exception as e:
 # ---------------------------------------------------------
 # 7. Merge Timeline with Event Data
 # ---------------------------------------------------------
-active_hours = DAY_HOURS if active_turno == "5AM-5PM" else NIGHT_HOURS
+active_hours = DAY_HOURS if active_turno == "6AM-6PM" else NIGHT_HOURS
 full_shift_df = pd.DataFrame({"Slot": list(range(1, 13)), "Hora": active_hours})
 
 if not existing_df.empty:
@@ -251,12 +251,9 @@ elif active_m_type == "ISPRAY":
     display_df['Tiempo Parada (min)'] = display_df['Tiempo Parada (min)'].apply(lambda x: f"{float(x):.2f}")
 
 else:
-    for int_col in ['PROD. LATAS', 'LAT CORTAS', 'TRANC TRIMMER', 'LAT x LAT CORTAS', 'LAT x TRANC TRIM']:
+    for int_col in ['PROD. LATAS', 'LAT CORTAS', 'TRANC TRIMMER']:
         display_df[int_col] = display_df[int_col].apply(lambda x: f"{int(round(float(x)))}")
-    for float_col in [
-        'Tiempo prom de parada x lat cort (min)', 'Tiempo prom de parada x tranc trim (min)',
-        'Tiempo parada (min)', 'Merma (kg)'
-    ]:
+    for float_col in ['Merma (kg)']:
         display_df[float_col] = display_df[float_col].apply(lambda x: f"{float(x):.2f}")
 
 # Verifica los permisos del usuario una sola vez por sesión (evita repetir

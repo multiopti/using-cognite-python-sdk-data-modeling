@@ -296,7 +296,11 @@ def generate_di_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_s
 
     downtime_short = short_count * DOWNTIME_PER_SHORT_CAN_MIN
     downtime_trim = trim_count * DOWNTIME_PER_TRIM_JAM_MIN
-    total_downtime_min = min(60.0, downtime_short + downtime_trim)
+    # Zero production means the machine wasn't running, regardless of what the
+    # short-can/trimmer-jam counters show -- without this, an hour with no
+    # output and no logged defects fell through to 0 downtime (100% "Operación
+    # normal"), reading a fully idle hour as a perfect one.
+    total_downtime_min = 60.0 if prod_count == 0 else min(60.0, downtime_short + downtime_trim)
 
     total_scrap_cans = cans_from_short + cans_from_trim
     merma_kg = round(total_scrap_cans * CAN_WEIGHT_KG, 2)
@@ -312,7 +316,9 @@ def generate_di_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_s
     resets = [name for name, flag in (("prod", prod_reset), ("short_cans", short_reset), ("trimmer_jams", trim_reset)) if flag]
 
     obs_parts = []
-    if total_downtime_min == 0:
+    if prod_count == 0:
+        obs_parts.append("Sin producción")
+    elif total_downtime_min == 0:
         obs_parts.append("Operación normal")
     elif short_count > 0 and trim_count > 0:
         obs_parts.append("Parada por latas cortas y trancamiento")
@@ -371,7 +377,11 @@ def generate_standum_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
 
     downtime_short = short_count * DOWNTIME_PER_SHORT_CAN_MIN
     downtime_trim = trim_count * DOWNTIME_PER_TRIM_JAM_MIN
-    total_downtime_min = min(60.0, downtime_short + downtime_trim)
+    # Zero production means the machine wasn't running, regardless of what the
+    # short-can/trimmer-jam counters show -- without this, an hour with no
+    # output and no logged defects fell through to 0 downtime (100% "Operación
+    # normal"), reading a fully idle hour as a perfect one.
+    total_downtime_min = 60.0 if hourly_production == 0 else min(60.0, downtime_short + downtime_trim)
 
     total_scrap_cans = cans_from_short + cans_from_trim
     merma_kg = round(total_scrap_cans * CAN_WEIGHT_KG, 2)
@@ -387,7 +397,9 @@ def generate_standum_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
     resets = [name for name, flag in (("prod", prod_reset), ("short_cans", short_reset), ("trimmer_jams", trim_reset)) if flag]
 
     obs_parts = []
-    if total_downtime_min == 0:
+    if hourly_production == 0:
+        obs_parts.append("Sin producción")
+    elif total_downtime_min == 0:
         obs_parts.append("Operación normal")
     elif short_count > 0 and trim_count > 0:
         obs_parts.append("Parada por latas cortas y trancamiento")

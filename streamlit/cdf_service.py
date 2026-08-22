@@ -219,7 +219,7 @@ async def save_observations_to_cdf(
 
 async def fetch_heartbeat_status() -> str:
     try:
-        res = await client.time_series.data.retrieve_latest(external_id="ActivoSimulacion.HEARTBEAT")
+        res = await client.time_series.data.retrieve_latest(external_id="HEARTBEAT_MQTT_DISP")
         if res is None:
             return "Sin datos"
 
