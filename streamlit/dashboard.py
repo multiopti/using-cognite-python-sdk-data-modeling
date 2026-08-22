@@ -7,11 +7,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cognite.client import AsyncCogniteClient
+from cognite.client.data_classes import EventUpdate, EventWrite
 
 # ---------------------------------------------------------
 # 1. Page & Layout Configuration
 # ---------------------------------------------------------
-st.set_page_config(page_title="Reporte de Producci贸n", layout="wide")
+st.set_page_config(page_title="Reporte de Producción", layout="wide")
 
 st.markdown("""
     <style>
@@ -56,10 +57,9 @@ def get_cognite_client():
 
 client = get_cognite_client()
 
-# Updated to mirror Jupyter Notebook asset identifiers
 MACHINE_GROUPS = {
     "MINSTER": ["MINSTER_L1", "MINSTER_L3"],
-    "DI": ["DI11", "DI12", "DI14", "DI15", "DI17", "DI18"],  # Removed DI13 & DI16
+    "DI": ["DI11", "DI12", "DI14", "DI15", "DI17", "DI18"],
     "STANDUM": [
         "STANDUM31", "STANDUM32", "STANDUM33", "STANDUM34", 
         "STANDUM35", "STANDUM36", "STANDUM37", "STANDUM38"
@@ -85,6 +85,22 @@ DAY_HOURS = [
 NIGHT_HOURS = [
     "5PM-6PM", "6PM-7PM", "7PM-8PM", "8PM-9PM", "9PM-10PM", "10PM-11PM",
     "11PM-12AM", "12AM-1AM", "1AM-2AM", "2AM-3AM", "3AM-4AM", "4AM-5AM"
+]
+
+INCIDENTES_OPCIONES = [
+    "Operación estándar",
+    "Falla Mecánica",
+    "Falla Eléctrica",
+    "Falla Neumática / Hidráulica",
+    "Falta de Materia Prima / Insumos",
+    "Ajuste / Calibración de Máquina",
+    "Trancamiento / Atasco en Línea",
+    "Mantenimiento Programado",
+    "Mantenimiento No Programado",
+    "Problema de Calidad / Inspección",
+    "Cambio de Formato / Herramental",
+    "Limpieza Operativa",
+    "Sin Personal / Ausentismo"
 ]
 
 LOGO_URL = "https://static.wikia.nocookie.net/logopedia/images/d/d4/EmpresasPolar2010.png/revision/latest?cb=20200403161102&path-prefix=es"
@@ -148,7 +164,7 @@ with filter_col1:
 
 with filter_col2:
     selected_m_type = st.selectbox(
-        "Tipo de M谩quina",
+        "Tipo de Máquina",
         options=list(MACHINE_GROUPS.keys()),
         index=list(MACHINE_GROUPS.keys()).index(active_m_type) if active_m_type in MACHINE_GROUPS else 0,
         key="input_m_type"
@@ -158,7 +174,7 @@ with filter_col3:
     available_machines = MACHINE_GROUPS.get(selected_m_type, list(MACHINE_GROUPS.values())[0])
     m_index = available_machines.index(active_machine_label) if active_machine_label in available_machines else 0
     st.selectbox(
-        "M谩quina",
+        "Máquina",
         options=available_machines,
         index=m_index,
         key="input_machine_label"
@@ -171,13 +187,13 @@ with filter_col4:
 
 with btn_col:
     st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-    st.button("Actualizar 馃攧", use_container_width=True, on_click=apply_filters_callback)
+    st.button("Actualizar ??", use_container_width=True, on_click=apply_filters_callback)
 
 # ---------------------------------------------------------
 # 6. Main Report Title
 # ---------------------------------------------------------
 st.markdown(
-    f"<h1 class='custom-title'>Reporte de Producci贸n: {active_m_type} ({active_machine_label})</h1>", 
+    f"<h1 class='custom-title'>Reporte de Producción: {active_m_type} ({active_machine_label})</h1>", 
     unsafe_allow_html=True
 )
 
@@ -195,7 +211,7 @@ full_shift_df = pd.DataFrame({
 
 if active_m_type == "PRINTER":
     TABLE_DISPLAY_COLUMNS = [
-        'Hora', 'Producci贸n x hora', 'Retrac-x-hora', 'Blow of', 
+        'Hora', 'Producción x hora', 'Retrac-x-hora', 'Blow of', 
         'Tiempo de parada', '% Eficiencia', 'Observaciones'
     ]
 elif active_m_type == "MINSTER":
@@ -205,7 +221,7 @@ elif active_m_type == "MINSTER":
     ]
 elif active_m_type == "ISPRAY":
     TABLE_DISPLAY_COLUMNS = [
-        'Hora', 'Producci贸n x hora', 'Tiempo Parada (min)', 
+        'Hora', 'Producción x hora', 'Tiempo Parada (min)', 
         '% Eficiencia', 'Observaciones'
     ]
 else:
@@ -238,7 +254,7 @@ def get_meta_str(meta: dict, keys: list, default: str = "") -> str:
     return default
 
 # ---------------------------------------------------------
-# 8. Async CDF Data Loaders
+# 8. Async CDF Data Loaders & Savers
 # ---------------------------------------------------------
 async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: str, turno_label: str) -> pd.DataFrame:
     fecha_clean = fecha_str.replace("-", "")
@@ -247,7 +263,6 @@ async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: 
     m_code_clean = machine_code.lower()
     alt_codes = [m_code_clean]
     
-    # Bi-directional resolution for all machine prefixes
     if "minster" in m_code_clean or "min" in m_code_clean:
         if "1" in m_code_clean:
             alt_codes.extend(["minster_l1", "min11", "minster11"])
@@ -285,22 +300,23 @@ async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: 
 
     rows = []
     for evt in events:
-        meta = evt.metadata or {}
+        meta = getattr(evt, 'metadata', None) or {}
+        ext_id = getattr(evt, 'external_id', '') or ''
         
         try:
-            slot_num = int(evt.external_id.split("_entry_")[-1])
+            slot_num = int(ext_id.split("_entry_")[-1])
         except Exception:
             slot_num = int(meta.get('slot_index', meta.get('slot', 1)))
 
         if m_type == "PRINTER":
             rows.append({
                 'Slot': slot_num,
-                'Producci贸n x hora': get_meta_num(meta, ['hourly_production', 'production', 'prod_hora', 'delta_prod']),
+                'Producción x hora': get_meta_num(meta, ['hourly_production', 'production', 'prod_hora', 'delta_prod']),
                 'Retrac-x-hora': get_meta_num(meta, ['hourly_retrac', 'retrac', 'delta_retrac']),
                 'Blow of': get_meta_num(meta, ['blow_off', 'blow_of', 'delta_blowoff']),
                 'Tiempo de parada': get_meta_num(meta, ['downtime_minutes', 'tiempo_de_parada', 'downtime']),
                 '% Eficiencia': get_meta_str(meta, ['pct_eficiencia', 'efficiency', 'eficiencia'], '0.00%'),
-                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operaci贸n est谩ndar')
+                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operación estándar')
             })
         elif m_type == "MINSTER":
             rows.append({
@@ -309,15 +325,15 @@ async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: 
                 'Golpes Turno': get_meta_num(meta, ['golpes_turno_hora', 'golpes_turno', 'shift_strokes']),
                 'Tiempo Parada (min)': get_meta_num(meta, ['downtime_minutes', 'tiempo_de_parada', 'downtime']),
                 '% Eficiencia': get_meta_str(meta, ['pct_eficiencia', '% eficiencia', 'eficiencia'], '0.00%'),
-                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operaci贸n est谩ndar')
+                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operación estándar')
             })
         elif m_type == "ISPRAY":
             rows.append({
                 'Slot': slot_num,
-                'Producci贸n x hora': get_meta_num(meta, ['hourly_production', 'production', 'prod_hora', 'delta_prod']),
+                'Producción x hora': get_meta_num(meta, ['hourly_production', 'production', 'prod_hora', 'delta_prod']),
                 'Tiempo Parada (min)': get_meta_num(meta, ['downtime_minutes', 'tiempo_de_parada', 'downtime']),
                 '% Eficiencia': get_meta_str(meta, ['pct_eficiencia', '% eficiencia', 'eficiencia'], '0.00%'),
-                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operaci贸n est谩ndar')
+                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operación estándar')
             })
         else:
             rows.append({
@@ -333,10 +349,98 @@ async def load_shift_report_from_cdf(machine_code: str, m_type: str, fecha_str: 
                 'Merma (kg)': get_meta_num(meta, ['merma_kg', 'merma']),
                 '% Merma': get_meta_str(meta, ['pct_merma', '% merma'], '0.00%'),
                 '% Eficiencia': get_meta_str(meta, ['pct_eficiencia', '% eficiencia', 'eficiencia'], '0.00%'),
-                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operaci贸n est谩ndar')
+                'Observaciones': get_meta_str(meta, ['observations', 'observaciones', 'obs'], 'Operación estándar')
             })
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+async def save_observations_to_cdf(
+    machine_code: str, 
+    fecha_str: str, 
+    turno_label: str, 
+    edited_df: pd.DataFrame, 
+    filtered_df: pd.DataFrame
+) -> int:
+    fecha_clean = fecha_str.replace("-", "")
+    shift_code = SHIFT_MAP.get(turno_label, 'day')
+    m_code_clean = machine_code.lower()
+    prefix = f"report_{m_code_clean}_{fecha_clean}_{shift_code}"
+
+    existing_events = await client.events.list(
+        type="Production Report", 
+        external_id_prefix=prefix, 
+        limit=100
+    )
+    if not existing_events:
+        existing_events = await client.events.list(
+            external_id_prefix=prefix, 
+            limit=100
+        )
+
+    event_map = {}
+    for evt in existing_events:
+        ext_id = getattr(evt, 'external_id', '') or (evt.get('external_id', '') if isinstance(evt, dict) else '')
+        meta = getattr(evt, 'metadata', {}) or (evt.get('metadata', {}) if isinstance(evt, dict) else {})
+        try:
+            slot_num = int(ext_id.split("_entry_")[-1])
+        except Exception:
+            slot_num = int(meta.get('slot_index', meta.get('slot', 1)))
+        event_map[slot_num] = evt
+
+    events_to_create = []
+    updates_to_send = []
+
+    for idx, row in edited_df.iterrows():
+        slot_num = int(filtered_df.loc[idx, 'Slot'])
+        nueva_obs = str(row['Observaciones'])
+        ext_id = f"{prefix}_entry_{slot_num}"
+
+        if slot_num in event_map:
+            existing_evt = event_map[slot_num]
+            current_meta = getattr(existing_evt, 'metadata', None)
+            if current_meta is None and isinstance(existing_evt, dict):
+                current_meta = existing_evt.get('metadata', {})
+            current_meta = dict(current_meta or {})
+            
+            if current_meta.get('observations') != nueva_obs or current_meta.get('observaciones') != nueva_obs:
+                current_meta['observations'] = nueva_obs
+                current_meta['observaciones'] = nueva_obs
+                
+                evt_id = getattr(existing_evt, 'id', None)
+                if evt_id:
+                    evt_update = EventUpdate(id=evt_id)
+                else:
+                    evt_update = EventUpdate(external_id=ext_id)
+                
+                evt_update.metadata.set(current_meta)
+                updates_to_send.append(evt_update)
+        else:
+            new_meta = {
+                "slot": str(slot_num),
+                "slot_index": str(slot_num),
+                "observations": nueva_obs,
+                "observaciones": nueva_obs
+            }
+            for col in filtered_df.columns:
+                if col not in ['Slot', 'Hora', 'Observaciones']:
+                    new_meta[col.lower().replace(' ', '_')] = str(filtered_df.loc[idx, col])
+
+            # Uso correcto de EventWrite para creación de nuevos eventos en CDF SDK v7+
+            events_to_create.append(
+                EventWrite(
+                    external_id=ext_id,
+                    type="Production Report",
+                    description=f"Reporte {m_code_clean} - Slot {slot_num}",
+                    metadata=new_meta
+                )
+            )
+
+    if updates_to_send:
+        await client.events.update(updates_to_send)
+    if events_to_create:
+        await client.events.create(events_to_create)
+
+    return len(updates_to_send) + len(events_to_create)
 
 async def fetch_heartbeat_status() -> str:
     try:
@@ -395,14 +499,14 @@ else:
     filtered_df = full_shift_df.copy()
 
 if active_m_type == "PRINTER":
-    num_cols = ['Producci贸n x hora', 'Retrac-x-hora', 'Blow of', 'Tiempo de parada']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
+    num_cols = ['Producción x hora', 'Retrac-x-hora', 'Blow of', 'Tiempo de parada']
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
 elif active_m_type == "MINSTER":
     num_cols = ['Golpes Bobina', 'Golpes Turno', 'Tiempo Parada (min)']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
 elif active_m_type == "ISPRAY":
-    num_cols = ['Producci贸n x hora', 'Tiempo Parada (min)']
-    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
+    num_cols = ['Producción x hora', 'Tiempo Parada (min)']
+    str_cols = {'% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
 else:
     num_cols = [
         'PROD. LATAS', 'LAT CORTAS', 'TRANC TRIMMER',
@@ -410,7 +514,7 @@ else:
         'Tiempo prom de parada x lat cort (min)', 'Tiempo prom de parada x tranc trim (min)',
         'Tiempo parada (min)', 'Merma (kg)'
     ]
-    str_cols = {'% Merma': '0.00%', '% Eficiencia': '0.00%', 'Observaciones': 'Sin registros'}
+    str_cols = {'% Merma': '0.00%', '% Eficiencia': '0.00%', 'Observaciones': 'Operación estándar'}
 
 for col in num_cols:
     if col not in filtered_df.columns:
@@ -443,10 +547,10 @@ if active_m_type == "PRINTER":
         fig_prod_line = px.line(
             filtered_df, 
             x='Hora', 
-            y='Producci贸n x hora', 
+            y='Producción x hora', 
             markers=True,
-            labels={'Producci贸n x hora': 'Unidades', 'Hora': 'Hora'},
-            title=f"Producci贸n por Hora: {active_machine_label} ({active_turno})"
+            labels={'Producción x hora': 'Unidades', 'Hora': 'Hora'},
+            title=f"Producción por Hora: {active_machine_label} ({active_turno})"
         )
         fig_prod_line.update_layout(
             plot_bgcolor='white', paper_bgcolor='white',
@@ -515,9 +619,9 @@ elif active_m_type == "ISPRAY":
         fig_prod_ispray = px.line(
             filtered_df, 
             x='Hora', 
-            y='Producci贸n x hora', 
+            y='Producción x hora', 
             markers=True,
-            labels={'Producci贸n x hora': 'Latas', 'Hora': 'Hora'},
+            labels={'Producción x hora': 'Latas', 'Hora': 'Hora'},
             title=f"Latas Recubiertas (iSpray): {active_machine_label} ({active_turno})"
         )
         fig_prod_ispray.update_layout(
@@ -554,7 +658,7 @@ else:
             y='PROD. LATAS', 
             markers=True,
             labels={'PROD. LATAS': 'Latas Producidas', 'Hora': 'Hora'},
-            title=f"Producci贸n por Hora: {active_machine_label} ({active_turno})"
+            title=f"Producción por Hora: {active_machine_label} ({active_turno})"
         )
         fig_prod_line.update_layout(
             plot_bgcolor='white', paper_bgcolor='white',
@@ -585,7 +689,7 @@ st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px;' />", unsafe_allow_
 gauge_col1, gauge_col2, gauge_col3, gauge_col4 = st.columns(4)
 
 if active_m_type == "PRINTER":
-    total_prod = int(filtered_df['Producci贸n x hora'].sum())
+    total_prod = int(filtered_df['Producción x hora'].sum())
     total_retrac = int(filtered_df['Retrac-x-hora'].sum())
     total_blow = int(filtered_df['Blow of'].sum())
     total_downtime = round(filtered_df['Tiempo de parada'].sum(), 1)
@@ -593,7 +697,7 @@ if active_m_type == "PRINTER":
     with gauge_col1:
         fig_prod = go.Figure(go.Indicator(
             mode="gauge+number", value=total_prod,
-            title={'text': "Producci贸n Total (Turno)", 'font': {'size': 13}},
+            title={'text': "Producción Total (Turno)", 'font': {'size': 13}},
             gauge={'axis': {'range': [0, 720000], 'tickvals': [0, 200000, 400000, 600000, 720000], 'ticktext': ['0', '200k', '400k', '600k', '720k'], 'tickfont': {'size': 10}},
                    'bar': {'color': "#0078D4"},
                    'steps': [{'range': [0, 396000], 'color': "#FFCCCC"}, {'range': [396000, 720000], 'color': "#E6E6E6"}],
@@ -685,7 +789,7 @@ elif active_m_type == "MINSTER":
         st.plotly_chart(fig_stop, use_container_width=True)
 
 elif active_m_type == "ISPRAY":
-    total_cans_ispray = int(filtered_df['Producci贸n x hora'].sum())
+    total_cans_ispray = int(filtered_df['Producción x hora'].sum())
     avg_eff_ispray = get_avg_efficiency(filtered_df)
     total_downtime_ispray = round(filtered_df['Tiempo Parada (min)'].sum(), 1)
 
@@ -722,7 +826,7 @@ elif active_m_type == "ISPRAY":
         st.plotly_chart(fig_ispray_stop, use_container_width=True)
 
     with gauge_col4:
-        active_hours_count = int((filtered_df['Producci贸n x hora'] > 0).sum())
+        active_hours_count = int((filtered_df['Producción x hora'] > 0).sum())
         fig_active_hrs = go.Figure(go.Indicator(
             mode="number", value=active_hours_count,
             title={'text': "Horas Activas (Turno)", 'font': {'size': 13}},
@@ -740,7 +844,7 @@ else:
     with gauge_col1:
         fig_prod = go.Figure(go.Indicator(
             mode="gauge+number", value=total_prod_di,
-            title={'text': "Producci贸n Total (Latas)", 'font': {'size': 13}},
+            title={'text': "Producción Total (Latas)", 'font': {'size': 13}},
             gauge={'axis': {'range': [0, 720000], 'tickvals': [0, 200000, 400000, 600000, 720000], 'ticktext': ['0', '200k', '400k', '600k', '720k'], 'tickfont': {'size': 10}},
                    'bar': {'color': "#002B49"},
                    'steps': [{'range': [0, 396000], 'color': "#FFCCCC"}, {'range': [396000, 720000], 'color': "#E6E6E6"}],
@@ -783,14 +887,14 @@ else:
         st.plotly_chart(fig_stop, use_container_width=True)
 
 # ---------------------------------------------------------
-# 12. Format Display Table
+# 12. Format Display Table & Interactive Data Editor
 # ---------------------------------------------------------
 st.markdown("### Detalle Horario del Turno")
 
 display_df = filtered_df[TABLE_DISPLAY_COLUMNS].copy()
 
 if active_m_type == "PRINTER":
-    for int_col in ['Producci贸n x hora', 'Retrac-x-hora', 'Blow of']:
+    for int_col in ['Producción x hora', 'Retrac-x-hora', 'Blow of']:
         display_df[int_col] = display_df[int_col].apply(lambda x: f"{int(round(float(x)))}")
     display_df['Tiempo de parada'] = display_df['Tiempo de parada'].apply(lambda x: f"{float(x):.2f}")
 
@@ -800,7 +904,7 @@ elif active_m_type == "MINSTER":
     display_df['Tiempo Parada (min)'] = display_df['Tiempo Parada (min)'].apply(lambda x: f"{float(x):.2f}")
 
 elif active_m_type == "ISPRAY":
-    display_df['Producci贸n x hora'] = display_df['Producci贸n x hora'].apply(lambda x: f"{int(round(float(x)))}")
+    display_df['Producción x hora'] = display_df['Producción x hora'].apply(lambda x: f"{int(round(float(x)))}")
     display_df['Tiempo Parada (min)'] = display_df['Tiempo Parada (min)'].apply(lambda x: f"{float(x):.2f}")
 
 else:
@@ -814,11 +918,51 @@ else:
 
 display_df = display_df.astype(str)
 
-st.dataframe(
+obs_existentes = [obs for obs in display_df['Observaciones'].unique().tolist() if obs]
+opciones_desplegable = list(dict.fromkeys(INCIDENTES_OPCIONES + obs_existentes))
+
+read_only_cols = [c for c in display_df.columns if c != 'Observaciones']
+
+edited_df = st.data_editor(
     display_df,
+    column_config={
+        "Observaciones": st.column_config.SelectboxColumn(
+            "Observaciones / Incidencias",
+            help="Seleccione la falla o evento principal ocurrido en el bloque horario",
+            width="large",
+            options=opciones_desplegable,
+            required=True
+        )
+    },
+    disabled=read_only_cols,
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
+    key="table_editor"
 )
+
+# ---------------------------------------------------------
+# 12.1. Botón para Guardar Cambios en CDF
+# ---------------------------------------------------------
+st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+btn_save_col1, btn_save_col2 = st.columns([2.5, 5])
+
+with btn_save_col1:
+    if st.button("Guardar Cambios ??", use_container_width=True):
+        try:
+            with st.spinner("Guardando observaciones en Cognite Data Fusion..."):
+                total_mod = await save_observations_to_cdf(
+                    machine_code=active_machine_code,
+                    fecha_str=active_fecha,
+                    turno_label=active_turno,
+                    edited_df=edited_df,
+                    filtered_df=filtered_df
+                )
+            if total_mod > 0:
+                st.success(f"?{total_mod} registro(s) actualizados correctamente en CDF! ??")
+            else:
+                st.info("No se detectaron cambios pendientes por guardar.")
+        except Exception as e:
+            st.error(f"Error al guardar los cambios en CDF: {e}")
 
 # ---------------------------------------------------------
 # 13. Edge Heartbeat Footer

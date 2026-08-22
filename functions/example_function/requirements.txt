@@ -1,0 +1,7 @@
+# Extra pip dependencies for THIS function only. Full CPython runtime: any
+# PyPI package with a compatible wheel works here.
+#
+# cognite-sdk is pinned explicitly (rather than left to a platform default)
+# so the version installed at deploy time matches what's tested locally via
+# local_test.py -- see docs/CDF_DEV_SETUP.md.
+cognite-sdk==8.10.0

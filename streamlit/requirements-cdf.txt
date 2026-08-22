@@ -1,0 +1,19 @@
+# Packages to install from the "Manage packages" menu when this app is
+# deployed as a native Streamlit app INSIDE Cognite Data Fusion.
+#
+# That runtime is stlite (Pyodide/WebAssembly running in the browser), not a
+# normal Python server, so it only accepts pure-Python packages -- no
+# compiled/native wheels unless Pyodide ships a prebuilt one (pandas, numpy
+# and plotly do; most other C-extension packages don't). If a package fails
+# to install here with an error like "Can't find a pure Python 3 wheel for
+# ...", it's this limitation -- move that logic into a Cognite Function
+# instead (functions/) and have the Streamlit app call the function.
+#
+# Verify current versions/compatibility in CDF's package manager UI before
+# relying on this list -- it can drift from what's actually available.
+
+pyodide-http>=0.2.1
+cognite-sdk>=8.0.0rc1
+pandas
+numpy
+plotly
