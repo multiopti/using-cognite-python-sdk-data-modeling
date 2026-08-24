@@ -79,7 +79,7 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
             fig_prod_ispray = px.line(
                 filtered_df, x='Hora', y='Producción x hora', markers=True,
                 labels={'Producción x hora': 'Latas', 'Hora': 'Hora'},
-                title=f"Latas Recubiertas (iSpray): {active_machine_label} ({active_turno})"
+                title=f"Latas x hora: {active_machine_label} ({active_turno})"
             )
             fig_prod_ispray.update_layout(
                 plot_bgcolor='white', paper_bgcolor='white',
@@ -199,9 +199,9 @@ def render_gauges(filtered_df: pd.DataFrame, active_m_type: str):
             fig_gb = go.Figure(go.Indicator(
                 mode="gauge+number", value=total_golpes_bobina,
                 title={'text': "Total Golpes Bobina", 'font': {'size': 13}},
-                gauge={'axis': {'range': [0, 25000], 'tickfont': {'size': 10}},
+                gauge={'axis': {'range': [0, 60000], 'tickfont': {'size': 10}},
                        'bar': {'color': "#0284c7"},
-                       'steps': [{'range': [0, 15000], 'color': "#FFCCCC"}, {'range': [15000, 25000], 'color': "#E6E6E6"}]}
+                       'steps': [{'range': [0, 36000], 'color': "#FFCCCC"}, {'range': [36000, 60000], 'color': "#E6E6E6"}]}
             ))
             fig_gb.update_layout(height=200, paper_bgcolor='white', margin=dict(t=50, b=10, l=25, r=25))
             st.plotly_chart(fig_gb, use_container_width=True)
@@ -210,9 +210,9 @@ def render_gauges(filtered_df: pd.DataFrame, active_m_type: str):
             fig_gt = go.Figure(go.Indicator(
                 mode="gauge+number", value=total_golpes_turno,
                 title={'text': "Total Golpes Turno", 'font': {'size': 13}},
-                gauge={'axis': {'range': [0, 25000], 'tickfont': {'size': 10}},
+                gauge={'axis': {'range': [0, 60000], 'tickfont': {'size': 10}},
                        'bar': {'color': "#38bdf8"},
-                       'steps': [{'range': [0, 15000], 'color': "#FFCCCC"}, {'range': [15000, 25000], 'color': "#E6E6E6"}]}
+                       'steps': [{'range': [0, 36000], 'color': "#FFCCCC"}, {'range': [36000, 60000], 'color': "#E6E6E6"}]}
             ))
             fig_gt.update_layout(height=200, paper_bgcolor='white', margin=dict(t=50, b=10, l=25, r=25))
             st.plotly_chart(fig_gt, use_container_width=True)
@@ -246,10 +246,10 @@ def render_gauges(filtered_df: pd.DataFrame, active_m_type: str):
         with gauge_col1:
             fig_ispray_prod = go.Figure(go.Indicator(
                 mode="gauge+number", value=total_cans_ispray,
-                title={'text': "Total Latas Recubiertas", 'font': {'size': 13}},
-                gauge={'axis': {'range': [0, 20000], 'tickfont': {'size': 10}},
+                title={'text': "Total Latas", 'font': {'size': 13}},
+                gauge={'axis': {'range': [0, 192000], 'tickfont': {'size': 10}},
                        'bar': {'color': "#10b981"},
-                       'steps': [{'range': [0, 10000], 'color': "#FFCCCC"}, {'range': [10000, 20000], 'color': "#E6E6E6"}]}
+                       'steps': [{'range': [0, 96000], 'color': "#FFCCCC"}, {'range': [96000, 192000], 'color': "#E6E6E6"}]}
             ))
             fig_ispray_prod.update_layout(height=200, paper_bgcolor='white', margin=dict(t=50, b=10, l=25, r=25))
             st.plotly_chart(fig_ispray_prod, use_container_width=True)

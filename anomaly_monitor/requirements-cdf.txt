@@ -1,0 +1,16 @@
+# Packages to install from the "Manage packages" menu when this app is
+# deployed as a native Streamlit app INSIDE Cognite Data Fusion.
+#
+# That runtime is stlite (Pyodide/WebAssembly running in the browser), not a
+# normal Python server, so it only accepts pure-Python packages -- no
+# compiled/native wheels unless Pyodide ships a prebuilt one. This exact set
+# (cognite-sdk pinned <9, pyodide-httpx rather than pyodide-http since the
+# SDK uses httpx internally, ssl, authlib<1.7) matches what's already
+# confirmed working in this project's other CDF-hosted example app -- prefer
+# it over guessing at package names for this environment.
+
+cognite-sdk>=8,<9
+pyodide-httpx
+ssl
+authlib<1.7
+pandas

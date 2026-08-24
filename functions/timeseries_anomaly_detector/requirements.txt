@@ -1,0 +1,2 @@
+# Extra pip dependencies for THIS function only (optional -- the Cognite
+# client/SDK is already available at runtime, you don't need to list it).
