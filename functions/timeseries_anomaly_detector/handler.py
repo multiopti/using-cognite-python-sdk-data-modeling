@@ -4,6 +4,12 @@ Timeseries anomaly detector -- Cognite Function.
 Scans the same raw counters `hourly_production_report` reads, looking for
 five patterns per timeseries per hour:
 
+0. Negative readings (a communication-error sentinel, not real values --
+   seen live: exactly -1001 on production counters, -1 on secondary
+   ones, always at the same timestamps across a device's signals) are
+   dropped before any of the below runs, same fix as
+   hourly_production_report/handler.py's calculate_hourly_counter_delta.
+   Otherwise a comm-error blip would get misread as RESET_TO_ZERO.
 1. RESET_TO_ZERO      -- counter genuinely reset (dropped to ~0 mid-hour).
 2. NONZERO_DECREASE   -- counter dropped but NOT to zero: the exact class of
    sensor/telemetry noise that used to get misread as "the counter reset,
@@ -112,7 +118,17 @@ def _scan_for_reset_and_noise(client, ts_external_id: str, start_ms: int, end_ms
     except Exception:
         return found
 
-    if not dps or len(dps) < 2:
+    if not dps:
+        return found
+
+    # A negative reading means a communication error (seen live: exactly
+    # -1001 on production counters, -1 on secondary ones), not a real
+    # counter value -- a cumulative counter can never legitimately go
+    # negative. Drop these before scanning, same fix as
+    # hourly_production_report/handler.py's calculate_hourly_counter_delta,
+    # so a comm-error blip can't get misread as RESET_TO_ZERO.
+    dps = [dp for dp in dps if dp.value is not None and _safe_float(dp.value) >= 0]
+    if len(dps) < 2:
         return found
 
     for i in range(1, len(dps)):

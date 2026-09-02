@@ -1,0 +1,18 @@
+# Packages to install from the "Manage packages" menu when this app is
+# deployed as a native Streamlit app INSIDE Cognite Data Fusion.
+#
+# That runtime is stlite (Pyodide/WebAssembly running in the browser), not a
+# normal Python server, so it only accepts pure-Python packages -- no
+# compiled/native wheels unless Pyodide ships a prebuilt one. This set
+# matches anomaly_monitor/requirements-cdf.txt (cognite-sdk pinned <9,
+# pyodide-httpx rather than pyodide-http since the SDK uses httpx
+# internally, ssl, authlib<1.7) -- confirmed working for that app earlier
+# this session -- plus plotly, which streamlit/requirements-cdf.txt already
+# confirms works in this same Pyodide runtime for the per-machine dashboard.
+
+cognite-sdk>=8,<9
+pyodide-httpx
+ssl
+authlib<1.7
+pandas
+plotly

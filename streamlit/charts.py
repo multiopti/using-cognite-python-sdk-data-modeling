@@ -9,6 +9,16 @@ def get_avg_efficiency(df: pd.DataFrame) -> float:
     non_zero = eff_numeric[eff_numeric > 0]
     return float(non_zero.mean()) if not non_zero.empty else 0.0
 
+# Venezuelan/Spanish locale: comma is the decimal separator, period is the
+# thousands separator (e.g. 12.973 means twelve thousand nine hundred
+# seventy-three). Plotly's default axis/hover formatting instead abbreviates
+# large numbers with an SI-prefix "k"/"M" suffix (e.g. "12.973k"), which
+# misreads as an extra x1000 on top of the locale's own period grouping.
+# NUMBER_LAYOUT forces plain grouped integers instead; NUMBER_FMT is the
+# matching tickformat/hoverformat for axes whose values can exceed 1,000.
+NUMBER_LAYOUT = dict(separators=',.')
+NUMBER_FMT = ',.0f'
+
 def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_machine_label: str, active_turno: str):
     chart_col1, chart_col2 = st.columns(2)
 
@@ -20,9 +30,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 title=f"Producción por Hora: {active_machine_label} ({active_turno})"
             )
             fig_prod_line.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             fig_prod_line.update_traces(line=dict(color='#0078D4', width=3), marker=dict(size=7, color='#E81123', symbol='circle'))
@@ -36,9 +46,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 color_discrete_sequence=['#2B579A']
             )
             fig_retrac_bar.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             st.plotly_chart(fig_retrac_bar, use_container_width=True)
@@ -51,9 +61,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 title=f"Golpes de Bobina por Hora: {active_machine_label} ({active_turno})"
             )
             fig_strokes_line.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             fig_strokes_line.update_traces(line=dict(color='#0284c7', width=3), marker=dict(size=7, color='#0f172a', symbol='circle'))
@@ -67,9 +77,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 color_discrete_sequence=['#ef4444']
             )
             fig_stop_bar.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             st.plotly_chart(fig_stop_bar, use_container_width=True)
@@ -82,9 +92,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 title=f"Latas x hora: {active_machine_label} ({active_turno})"
             )
             fig_prod_ispray.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             fig_prod_ispray.update_traces(line=dict(color='#10b981', width=3), marker=dict(size=7, color='#047857', symbol='circle'))
@@ -98,9 +108,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 color_discrete_sequence=['#f59e0b']
             )
             fig_ispray_stop.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             st.plotly_chart(fig_ispray_stop, use_container_width=True)
@@ -113,9 +123,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
                 title=f"Producción por Hora: {active_machine_label} ({active_turno})"
             )
             fig_prod_line.update_layout(
-                plot_bgcolor='white', paper_bgcolor='white',
+                plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
             fig_prod_line.update_traces(line=dict(color='#002B49', width=3), marker=dict(size=7, color='#E81123', symbol='circle'))
@@ -126,9 +136,9 @@ def render_machine_charts(filtered_df: pd.DataFrame, active_m_type: str, active_
             fig_di_events.add_trace(go.Bar(x=filtered_df["Hora"], y=filtered_df["LAT CORTAS"], name="Latas Cortas", marker_color="#D62728"))
             fig_di_events.add_trace(go.Bar(x=filtered_df["Hora"], y=filtered_df["TRANC TRIMMER"], name="Tranc. Trimmer", marker_color="#9467BD"))
             fig_di_events.update_layout(
-                barmode="stack", plot_bgcolor='white', paper_bgcolor='white',
+                barmode="stack", plot_bgcolor='white', paper_bgcolor='white', **NUMBER_LAYOUT,
                 xaxis=dict(type='category', showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
-                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333'),
+                yaxis=dict(showgrid=True, gridcolor='#F0F0F0', linecolor='#333333', tickformat=NUMBER_FMT, hoverformat=NUMBER_FMT),
                 height=250, title=f"Merma x hora: {active_machine_label} ({active_turno})",
                 title_font=dict(size=14), margin=dict(t=35, b=25, l=40, r=40)
             )
@@ -171,9 +181,9 @@ def render_gauges(filtered_df: pd.DataFrame, active_m_type: str):
             fig_blow = go.Figure(go.Indicator(
                 mode="gauge+number", value=total_blow,
                 title={'text': "Blow off Total", 'font': {'size': 13}},
-                gauge={'axis': {'range': [0, 1000], 'tickfont': {'size': 10}}, 'bar': {'color': "#2B579A"},
-                       'steps': [{'range': [0, 800], 'color': "#E6E6E6"}, {'range': [800, 1000], 'color': "#FFCCCC"}],
-                       'threshold': {'line': {'color': "red", 'width': 3}, 'thickness': 0.75, 'value': 800}}
+                gauge={'axis': {'range': [0, 10000], 'tickfont': {'size': 10}}, 'bar': {'color': "#2B579A"},
+                       'steps': [{'range': [0, 8000], 'color': "#E6E6E6"}, {'range': [8000, 10000], 'color': "#FFCCCC"}],
+                       'threshold': {'line': {'color': "red", 'width': 3}, 'thickness': 0.75, 'value': 8000}}
             ))
             fig_blow.update_layout(height=200, paper_bgcolor='white', margin=dict(t=50, b=10, l=25, r=25))
             st.plotly_chart(fig_blow, use_container_width=True)

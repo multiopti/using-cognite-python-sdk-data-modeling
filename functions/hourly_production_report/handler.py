@@ -49,6 +49,16 @@ and summarized here:
    single hour, observed live on MINSTER_L1. Now only a step landing at/
    near 0 (see `_RESET_TO_ZERO_EPS`) counts as a real reset; any other
    downward step is logged and excluded from the delta as noise.
+8. `calculate_hourly_counter_delta()` also drops any datapoint with a
+   negative value before doing anything else with it (another live-data
+   finding, not from the notebook). A cumulative counter can never
+   legitimately go negative -- readings of exactly -1001 (production
+   counters) or -1 (secondary counters), always at the same timestamps
+   across a device's signals, turned out to be a communication-error
+   sentinel, not real values. Without this filter, a comm-error reading
+   like -1001 satisfies `curr_val < _RESET_TO_ZERO_EPS` and gets treated
+   as "reset to zero", adding that negative number straight into the
+   hourly delta -- silently under-reporting production for that hour.
 
 Deployment and scheduling: see README.md in this folder.
 """
@@ -155,15 +165,25 @@ def calculate_hourly_counter_delta(client, external_id: str, start_ms: int, end_
             ignore_unknown_ids=True,
         )
 
-        if not dps or len(dps) == 0:
-            print(f"  [Warning] [{external_id}] No datapoints found in window.")
-            return 0.0, False
-
         def safe_float(val) -> float:
             try:
                 return float(val) if val is not None else 0.0
             except (ValueError, TypeError):
                 return 0.0
+
+        # A negative reading (seen live: exactly -1001 on production counters,
+        # -1 on secondary ones, always in lockstep across a device's signals)
+        # means the PLC/sensor connection dropped, not a real counter value --
+        # a cumulative counter can never legitimately go negative. Drop these
+        # before the scan below so a comm-error blip can't get misread as a
+        # counter reset (curr_val < _RESET_TO_ZERO_EPS would otherwise treat
+        # e.g. -1001 as "reset to zero" and add that negative value into the
+        # hourly delta, silently under-reporting production for that hour).
+        dps = [dp for dp in dps if dp.value is not None and safe_float(dp.value) >= 0] if dps else dps
+
+        if not dps or len(dps) == 0:
+            print(f"  [Warning] [{external_id}] No datapoints found in window.")
+            return 0.0, False
 
         first_value = safe_float(dps[0].value)
         last_value = safe_float(dps[-1].value)
@@ -467,7 +487,12 @@ def generate_minster_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
     )
 
     resets = [name for name, flag in (("golpes_bobina", bob_reset), ("golpes_turno", turno_reset)) if flag]
-    obs_text = f"Resets detectados: {', '.join(resets)}" if resets else "Operación normal"
+    if hourly_production == 0:
+        obs_text = "Sin producción"
+    elif resets:
+        obs_text = f"Resets detectados: {', '.join(resets)}"
+    else:
+        obs_text = "Operación normal"
 
     event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
 
@@ -514,7 +539,12 @@ def generate_ispray_event(client, cfg: dict, start_ms: int, end_ms: int, last_ho
         else 0.0
     )
 
-    obs_text = "Reset detectado en contador" if prod_reset else "Operación normal"
+    if hourly_production == 0:
+        obs_text = "Sin producción"
+    elif prod_reset:
+        obs_text = "Reset detectado en contador"
+    else:
+        obs_text = "Operación normal"
     event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
 
     report_event = EventWrite(

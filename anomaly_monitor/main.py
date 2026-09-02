@@ -12,6 +12,7 @@ from config import (
     PATTERN_INFO,
     SEVERITY_LABELS,
     SEVERITY_ORDER,
+    resolve_pattern_info,
 )
 from cdf_service import load_anomaly_events
 
@@ -55,11 +56,15 @@ with filter_col3:
 
 with filter_col4:
     pattern_opts = list(PATTERN_INFO.keys())
-    default_patterns = [p for p in pattern_opts if PATTERN_INFO[p]["severity"] in severity_filter]
+    # Patrón and Severidad are independent filters: a pattern like
+    # NEW_WEEKLY_MAX can resolve to different severities per row (see
+    # resolve_pattern_info), so its default selection here can't depend on
+    # severity_filter the way it used to -- all patterns are pre-checked,
+    # and Severidad below does the actual severity-based row filtering.
     selected_patterns = st.multiselect(
         "Patrón",
         options=pattern_opts,
-        default=default_patterns,
+        default=pattern_opts,
         format_func=lambda p: f"{PATTERN_INFO[p]['icon']} {PATTERN_INFO[p]['label']}",
     )
 
@@ -71,6 +76,12 @@ try:
 except Exception as e:
     st.error(f"Error consultando eventos de CDF: {e}")
     df = None
+
+if df is not None and not df.empty:
+    df["severity"] = df.apply(
+        lambda r: resolve_pattern_info(r["pattern"], r.get("timeseries_label")).get("severity"), axis=1
+    )
+    df = df[df["severity"].isin(severity_filter)]
 
 if df is not None and not df.empty and selected_patterns:
     df = df[df["pattern"].isin(selected_patterns)]
@@ -92,7 +103,7 @@ summary_cols[0].metric("Total", total_count)
 for i, sev in enumerate(SEVERITY_ORDER, start=1):
     count = 0
     if df is not None and not df.empty:
-        count = df[df["pattern"].map(lambda p: PATTERN_INFO.get(p, {}).get("severity")) == sev].shape[0]
+        count = (df["severity"] == sev).sum()
     summary_cols[i].metric(SEVERITY_LABELS[sev], count)
 
 st.markdown("---")
@@ -110,7 +121,7 @@ def _fmt_num(v):
 
 
 def render_event_card(row) -> str:
-    info = PATTERN_INFO.get(row["pattern"], {"label": row["pattern"], "color": "#999999", "bg": "#f5f5f5", "icon": "⚪"})
+    info = resolve_pattern_info(row["pattern"], row.get("timeseries_label"))
 
     meta_parts = []
     if row.get("value_before") is not None and row.get("value_after") is not None:

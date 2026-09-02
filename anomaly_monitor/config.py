@@ -47,6 +47,32 @@ PATTERN_INFO = {
     },
 }
 
+# NEW_WEEKLY_MAX fires on both production metrics (a new high is good) and
+# scrap/waste metrics (a new high is bad) -- see WATCHED_TIMESERIES in
+# functions/timeseries_anomaly_detector/config.py, whose "direction" this
+# label set mirrors (kept separate on purpose: this app shares no code or
+# deploy with that Function). resolve_pattern_info() below uses it to flip
+# NEW_WEEKLY_MAX to red/critical for scrap metrics instead of green/positive.
+SCRAP_LABELS = {"Retrac", "Blow off", "Latas cortas", "Trancamiento trimmer"}
+
+NEW_WEEKLY_MAX_SCRAP_INFO = {
+    "label": "Nuevo máximo semanal (merma)",
+    "severity": "critical",
+    "color": "#dc2626",       # red
+    "bg": "#FEF2F2",
+    "icon": "🔴",
+}
+
+
+def resolve_pattern_info(pattern: str, timeseries_label: str | None = None) -> dict:
+    """Like PATTERN_INFO[pattern], except NEW_WEEKLY_MAX on a scrap/waste
+    metric (e.g. Latas cortas, Trancamiento trimmer) resolves to red/critical
+    instead of the pattern's default green/positive."""
+    if pattern == "NEW_WEEKLY_MAX" and timeseries_label in SCRAP_LABELS:
+        return NEW_WEEKLY_MAX_SCRAP_INFO
+    return PATTERN_INFO.get(pattern, {"label": pattern, "severity": "info", "color": "#999999", "bg": "#f5f5f5", "icon": "⚪"})
+
+
 # Severity display order (for the filter and for sorting within a group).
 SEVERITY_ORDER = ["critical", "warning", "info", "positive"]
 SEVERITY_LABELS = {

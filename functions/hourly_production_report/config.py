@@ -168,7 +168,7 @@ MACHINE_CONFIGS = [
         "code": "minster_l1",
         "machine_type": "minster",
         "asset_ext_id": "SuperenvasesMQTT_L1_MINSTER",
-        "nominal_capacity": 6000.0,  # per hour; shift target = 6000 * 12 = 72000
+        "nominal_capacity": 7000.0,  # per hour; shift target = 7000 * 12 = 84000
         "ts_golpes_bob": "MINSTER_L1_GOLPES_BOB_ACT_DISP",
         "ts_golpes_turno": "MINSTER_L1_GOLPES_TURNO_ACT_DISP",
     },
@@ -176,7 +176,7 @@ MACHINE_CONFIGS = [
         "code": "minster_l3",
         "machine_type": "minster",
         "asset_ext_id": "SuperenvasesMQTT_L3_MINSTER",
-        "nominal_capacity": 6000.0,  # per hour; shift target = 6000 * 12 = 72000
+        "nominal_capacity": 7000.0,  # per hour; shift target = 7000 * 12 = 84000
         "ts_golpes_bob": "MINSTER_L3_GOLPES_BOB_ACT_DISP",
         "ts_golpes_turno": "MINSTER_L3_GOLPES_TURNO_ACT_DISP",
     },
