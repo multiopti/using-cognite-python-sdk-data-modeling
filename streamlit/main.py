@@ -12,7 +12,7 @@ from cognite.client.data_classes.capabilities import EventsAcl
 from config import (
     MACHINE_GROUPS, DAY_HOURS, NIGHT_HOURS,
     INCIDENTES_OPCIONES, LOGO_URL, CUSTOM_CSS,
-    get_display_columns
+    current_shift_defaults, get_display_columns
 )
 from cdf_service import (
     load_shift_report_from_cdf,
@@ -42,12 +42,13 @@ today = date.today()
 thirty_days_ago = today - timedelta(days=30)
 
 if "applied_filters" not in st.session_state:
+    default_fecha, default_turno = current_shift_defaults()
     st.session_state.applied_filters = {
-        "fecha": today.strftime("%Y-%m-%d"),
+        "fecha": default_fecha.strftime("%Y-%m-%d"),
         "m_type": "STANDUM",
         "machine_label": "STANDUM32",
         "machine_code": "standum32",
-        "turno": "6AM-6PM"
+        "turno": default_turno
     }
 
 def apply_filters_callback():

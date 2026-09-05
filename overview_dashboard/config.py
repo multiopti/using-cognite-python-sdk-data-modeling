@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 # Same day/night boundary convention as streamlit/config.py -- reused here so
 # a date+shift picked in this app maps to the exact same external_id prefix
@@ -149,3 +149,30 @@ def today_str() -> str:
 
 def thirty_days_ago_str() -> str:
     return (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+
+# Local operational timezone: GMT-4 fixed offset -- Venezuela does not
+# observe daylight saving, matching functions/hourly_production_report's
+# LOCAL_TZ constant.
+LOCAL_TZ = timezone(timedelta(hours=-4))
+
+
+def current_shift_defaults() -> tuple[date, str]:
+    """
+    (fecha, turno_label) for whichever shift is actually running right now,
+    for the date/turno filters to default to on page load instead of always
+    landing on today + day shift regardless of the real time.
+
+    Day shift is 06:00-18:00 local, night shift is 18:00-06:00 -- and since
+    night crosses midnight, its "shift date" is the date it STARTED, not
+    today's calendar date. So between midnight and 06:00 local, this
+    correctly returns YESTERDAY's date with the night shift, matching the
+    external_id convention (report_{code}_{fecha}_{shift}) used everywhere
+    else in this project, where a night-shift report already written at
+    01:00 is filed under the previous day.
+    """
+    now_local = datetime.now(LOCAL_TZ)
+    if 6 <= now_local.hour < 18:
+        return now_local.date(), "6AM-6PM"
+    shift_date = now_local.date() if now_local.hour >= 18 else now_local.date() - timedelta(days=1)
+    return shift_date, "6PM-6AM"

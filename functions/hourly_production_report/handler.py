@@ -62,8 +62,9 @@ and summarized here:
 
 Deployment and scheduling: see README.md in this folder.
 """
+from collections import defaultdict
 from datetime import datetime, timedelta
-from cognite.client.data_classes import EventWrite
+from cognite.client.data_classes import EventWrite, TimeSeriesWrite
 from cognite.client.exceptions import CogniteNotFoundError
 
 from config import (
@@ -74,6 +75,8 @@ from config import (
     DOWNTIME_PER_SHORT_CAN_MIN,
     DOWNTIME_PER_TRIM_JAM_MIN,
     HOUR_INTERVAL_MAP,
+    LINE_ASSET_EXT_ID,
+    LINE_TYPE_ASSET_EXT_ID,
     LOCAL_TZ,
     MACHINE_CONFIGS,
 )
@@ -230,14 +233,22 @@ def calculate_hourly_counter_delta(client, external_id: str, start_ms: int, end_
         return 0.0, False
 
 
-def _finalize_event(client, event: EventWrite, dry_run: bool, label: str) -> dict:
+def _finalize_event(client, event: EventWrite, dry_run: bool, label: str, agg: dict = None) -> dict:
     """
     Either upserts `event` to CDF, or (dry_run=True) skips the write
     entirely and returns what WOULD have been written -- lets you validate
     the KPI math against real, live CDF data (real time series reads) without
     creating or overwriting any real event. Safe to run against production.
+
+    `agg` carries this machine's hourly production/scrap numbers through to
+    the caller regardless of dry_run/ok status, so run_all_production_reports
+    can roll them up into the per-line/per-type derived timeseries without
+    re-reading the raw counters a second time. {"production": float,
+    "scrap": float | None} -- scrap is None for machine types that don't
+    track it (MINSTER, ISPRAY).
     """
     machine_code = event.metadata.get("machine_code") or event.metadata.get("printer_code")
+    agg = agg or {}
 
     if dry_run:
         print(f"  --> [DRY RUN] Would upsert {label} Event: '{event.external_id}' (nothing written)")
@@ -247,13 +258,14 @@ def _finalize_event(client, event: EventWrite, dry_run: bool, label: str) -> dic
             "status": "dry_run",
             "external_id": event.external_id,
             "metadata": event.metadata,
+            **agg,
         }
 
     res = client.events.upsert(event)
     ext_id = res.external_id if hasattr(res, "external_id") else res[0].external_id
     cdf_id = res.id if hasattr(res, "id") else res[0].id
     print(f"  --> Successfully posted {label} Event: '{ext_id}' (CDF ID: {cdf_id})")
-    return {"code": machine_code, "status": "ok", "external_id": ext_id, "id": cdf_id}
+    return {"code": machine_code, "status": "ok", "external_id": ext_id, "id": cdf_id, **agg}
 
 
 def generate_printer_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
@@ -300,7 +312,10 @@ def generate_printer_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
         },
     )
 
-    return _finalize_event(client, report_event, dry_run, label="Printer")
+    return _finalize_event(
+        client, report_event, dry_run, label="Printer",
+        agg={"production": hourly_production, "scrap": hourly_retrac + blow_off},
+    )
 
 
 def generate_di_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
@@ -381,7 +396,10 @@ def generate_di_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_s
         },
     )
 
-    return _finalize_event(client, report_event, dry_run, label="D&I")
+    return _finalize_event(
+        client, report_event, dry_run, label="D&I",
+        agg={"production": prod_count, "scrap": short_count + trim_count},
+    )
 
 
 def generate_standum_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
@@ -462,7 +480,10 @@ def generate_standum_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
         },
     )
 
-    return _finalize_event(client, report_event, dry_run, label="Standum")
+    return _finalize_event(
+        client, report_event, dry_run, label="Standum",
+        agg={"production": hourly_production, "scrap": short_count + trim_count},
+    )
 
 
 def generate_minster_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
@@ -519,7 +540,10 @@ def generate_minster_event(client, cfg: dict, start_ms: int, end_ms: int, last_h
         },
     )
 
-    return _finalize_event(client, report_event, dry_run, label="MINSTER")
+    return _finalize_event(
+        client, report_event, dry_run, label="MINSTER",
+        agg={"production": hourly_production, "scrap": None},
+    )
 
 
 def generate_ispray_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
@@ -568,7 +592,10 @@ def generate_ispray_event(client, cfg: dict, start_ms: int, end_ms: int, last_ho
         },
     )
 
-    return _finalize_event(client, report_event, dry_run, label="ISPRAY")
+    return _finalize_event(
+        client, report_event, dry_run, label="ISPRAY",
+        agg={"production": hourly_production, "scrap": None},
+    )
 
 
 _GENERATORS = {
@@ -578,6 +605,109 @@ _GENERATORS = {
     "minster": generate_minster_event,
     "ispray": generate_ispray_event,
 }
+
+
+def _write_line_type_rollups(client, configs: list, results: list, timestamp_ms: int, dry_run: bool) -> dict:
+    """
+    Rolls up each machine's already-computed hourly production/scrap (no raw
+    counters re-read here) into per-line and per-line-per-type totals, and
+    writes them as single datapoints on small derived timeseries -- e.g.
+    LINE1_DI_PRODUCTION_HOURLY, LINE1_DI_SCRAP_HOURLY, LINE1_PRODUCTION_HOURLY.
+
+    This exists for the customer-facing Grafana dashboard (grafana/
+    dashboard.json): its Cognite datasource can query a plain timeseries
+    directly, but its Events query only exposes a fixed column set and can't
+    surface a custom metadata field like pct_eficiencia/hourly_production --
+    so Grafana needs these clean, pre-aggregated numbers as real timeseries
+    rather than reading our Production Report events itself.
+
+    Only machines whose generator actually ran (status "ok" or "dry_run")
+    contribute; a skipped/errored machine is left out of the sum rather than
+    treated as zero, so one machine's error doesn't silently understate a
+    whole line's total.
+    """
+    by_line = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
+    by_line_type = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
+
+    for cfg, res in zip(configs, results):
+        if res.get("status") not in ("ok", "dry_run"):
+            continue
+        production = res.get("production")
+        if production is None:
+            continue
+        line = cfg["line"]
+        m_type = cfg["machine_type"].upper()
+        scrap = res.get("scrap")
+
+        by_line[line]["production"] += production
+        by_line_type[(line, m_type)]["production"] += production
+        if scrap is not None:
+            by_line[line]["scrap"] += scrap
+            by_line[line]["has_scrap"] = True
+            by_line_type[(line, m_type)]["scrap"] += scrap
+            by_line_type[(line, m_type)]["has_scrap"] = True
+
+    # asset_ext_id each derived series should attach to -- e.g.
+    # LINE1_DI_PRODUCTION_HOURLY -> SuperenvasesMQTT_L1_DI (the real parent
+    # asset of DI11/.../DI18), so these show up in the CDF asset hierarchy
+    # like every other timeseries instead of being orphaned.
+    datapoints = {}
+    asset_ext_id_by_ts = {}
+    for line, agg in by_line.items():
+        n = line[1:]
+        line_asset = LINE_ASSET_EXT_ID.get(line)
+        datapoints[f"LINE{n}_PRODUCTION_HOURLY"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_PRODUCTION_HOURLY"] = line_asset
+        if agg["has_scrap"]:
+            datapoints[f"LINE{n}_SCRAP_HOURLY"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_SCRAP_HOURLY"] = line_asset
+
+    for (line, m_type), agg in by_line_type.items():
+        n = line[1:]
+        type_asset = LINE_TYPE_ASSET_EXT_ID.get((line, m_type))
+        datapoints[f"LINE{n}_{m_type}_PRODUCTION_HOURLY"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_{m_type}_PRODUCTION_HOURLY"] = type_asset
+        if agg["has_scrap"]:
+            datapoints[f"LINE{n}_{m_type}_SCRAP_HOURLY"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_{m_type}_SCRAP_HOURLY"] = type_asset
+
+    # Several derived series share the same parent asset (e.g. both
+    # LINE1_PRODUCTION_HOURLY and LINE1_SCRAP_HOURLY point at
+    # SuperenvasesMQTT_L1), so dedupe before resolving -- CDF's API rejects a
+    # retrieve_multiple() call whose external_ids list has repeats.
+    unique_asset_ext_ids = list(dict.fromkeys(a for a in asset_ext_id_by_ts.values() if a is not None))
+    asset_id_by_ext_id, asset_warnings = _resolve_asset_ids(client, unique_asset_ext_ids)
+    for w in asset_warnings:
+        print(f"  [Warning] {w}")
+
+    if dry_run:
+        print("\n--- [DRY RUN] Would write derived line/type rollup timeseries ---")
+        for eid, val in sorted(datapoints.items()):
+            asset_ext_id = asset_ext_id_by_ts.get(eid)
+            asset_id = asset_id_by_ext_id.get(asset_ext_id) if asset_ext_id else None
+            print(f"  {eid}: {val:,.1f}  (asset: {asset_ext_id} -> id {asset_id})")
+        return {"dry_run": True, "datapoints": datapoints}
+
+    external_ids = list(datapoints.keys())
+    existing = client.time_series.retrieve_multiple(external_ids=external_ids, ignore_unknown_ids=True)
+    existing_ids = {ts.external_id for ts in existing}
+    missing = [eid for eid in external_ids if eid not in existing_ids]
+    if missing:
+        client.time_series.create([
+            TimeSeriesWrite(
+                external_id=eid, name=eid, is_step=True, data_set_id=DATA_SET_ID,
+                asset_id=asset_id_by_ext_id.get(asset_ext_id_by_ts.get(eid)),
+            )
+            for eid in missing
+        ])
+        print(f"  Created {len(missing)} new derived timeseries: {missing}")
+
+    client.time_series.data.insert_multiple([
+        {"external_id": eid, "datapoints": [(timestamp_ms, value)]}
+        for eid, value in datapoints.items()
+    ])
+    print(f"  Wrote {len(datapoints)} derived line/type rollup datapoints.")
+    return {"dry_run": False, "datapoints": datapoints}
 
 
 def run_all_production_reports(client, data: dict = None) -> dict:
@@ -652,6 +782,8 @@ def run_all_production_reports(client, data: dict = None) -> dict:
         "errors": sum(1 for r in results if r.get("status") == "error"),
     }
 
+    rollups = _write_line_type_rollups(client, configs, results, end_ms, dry_run)
+
     return {
         "window": {
             "start_local": last_hour_start_local.strftime("%Y-%m-%d %H:%M"),
@@ -661,6 +793,7 @@ def run_all_production_reports(client, data: dict = None) -> dict:
         "summary": summary,
         "results": results,
         "asset_resolution_warnings": asset_warnings,
+        "line_type_rollups": rollups,
     }
 
 

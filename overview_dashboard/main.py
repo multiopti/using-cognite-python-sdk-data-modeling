@@ -16,6 +16,7 @@ from config import (
     STATUS_LABELS,
     TYPE_COLORS,
     TYPE_LABELS,
+    current_shift_defaults,
     thirty_days_ago_str,
     today_str,
 )
@@ -38,18 +39,20 @@ with header_col1:
     )
 
 with header_col2:
+    default_fecha, default_turno = current_shift_defaults()
+
     filter_col1, filter_col2 = st.columns(2)
     with filter_col1:
         fecha = st.date_input(
             "Fecha",
-            value=pd.to_datetime(today_str()).date(),
+            value=default_fecha,
             min_value=pd.to_datetime(thirty_days_ago_str()).date(),
             max_value=pd.to_datetime(today_str()).date(),
             key="input_fecha",
         )
     with filter_col2:
         turno_opts = ["6AM-6PM", "6PM-6AM"]
-        turno = st.selectbox("Turno", options=turno_opts, key="input_turno")
+        turno = st.selectbox("Turno", options=turno_opts, index=turno_opts.index(default_turno), key="input_turno")
 
 fecha_str = fecha.strftime("%Y-%m-%d")
 
