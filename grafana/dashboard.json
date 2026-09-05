@@ -1,0 +1,701 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "advf4cr",
+    "namespace": "default",
+    "uid": "1f5f7ff0-a166-454d-8f58-faf6a0ae98aa",
+    "resourceVersion": "1788483423801988",
+    "generation": 24,
+    "creationTimestamp": "2026-09-04T00:05:57Z",
+    "labels": {
+      "grafana.app/deprecatedInternalID": "1490800144072704"
+    },
+    "annotations": {
+      "grafana.app/createdBy": "user:cfoggq9rk5slcf",
+      "grafana.app/folder": "",
+      "grafana.app/saved-from-ui": "Grafana v13.0.2 (3fcdbc5a)",
+      "grafana.app/updatedBy": "user:cfoggq9rk5slcf",
+      "grafana.app/updatedTimestamp": "2026-09-04T00:57:03Z"
+    }
+  },
+  "spec": {
+    "annotations": [
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "query": {
+            "kind": "DataQuery",
+            "group": "grafana",
+            "version": "v0",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {}
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "builtIn": true
+        }
+      }
+    ],
+    "cursorSync": "Off",
+    "editable": true,
+    "elements": {
+      "panel-1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "Dashboard",
+          "description": "",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "cognitedata-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfx6rswa7981sc"
+                      },
+                      "spec": {
+                        "aggregation": "average",
+                        "assetQuery": {
+                          "includeSubTimeseries": true,
+                          "includeSubtrees": false,
+                          "relationshipsQuery": {
+                            "dataSetIds": [],
+                            "depth": 1,
+                            "isActiveAtTime": false,
+                            "isTypeTimeseries": false,
+                            "labels": {
+                              "containsAny": []
+                            },
+                            "limit": 1000,
+                            "sourceExternalIds": []
+                          },
+                          "target": "",
+                          "withRelationships": false
+                        },
+                        "cogniteActivityQuery": {
+                          "enabled": false,
+                          "externalId": "CogniteActivity",
+                          "space": "cdf_cdm",
+                          "useScheduledTime": false,
+                          "version": "v1"
+                        },
+                        "cogniteActivityTabQuery": {
+                          "activeOnly": true,
+                          "assetInstances": [],
+                          "columns": [
+                            "externalId",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "externalId": "CogniteMaintenanceOrder",
+                          "instanceSpace": "FDM_Project_Space",
+                          "resourceType": "CogniteTimeSeries",
+                          "sort": [
+                            {
+                              "order": "asc",
+                              "property": "startTime"
+                            }
+                          ],
+                          "space": "cdf_idm",
+                          "version": "v1"
+                        },
+                        "cogniteTimeSeries": {
+                          "externalId": "CogniteExtractorTimeSeries",
+                          "space": "cdf_extraction_extensions",
+                          "version": "v1"
+                        },
+                        "eventQuery": {
+                          "activeAtTimeRange": true,
+                          "advancedFilter": "",
+                          "aggregate": {
+                            "name": "uniqueValues",
+                            "properties": [],
+                            "withAggregate": false
+                          },
+                          "columns": [
+                            "externalId",
+                            "type",
+                            "subtype",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "expr": ""
+                        },
+                        "expr": "",
+                        "extractionPipelinesQuery": {
+                          "columns": [
+                            "name",
+                            "status",
+                            "lastUpdatedTime",
+                            "lastFailure",
+                            "lastSeen",
+                            "lastSuccess",
+                            "schedule",
+                            "data set",
+                            "message"
+                          ],
+                          "getRuns": false,
+                          "limit": 1000,
+                          "selections": []
+                        },
+                        "flexibleDataModellingQuery": {
+                          "externalId": "",
+                          "graphQlQuery": "{\n  listMachine {\n    items {\n      __typename\n      MachineWeight\n      Model\n      Anomalies {\n        externalId\n        id\n        name\n        __typename\n      }\n      Availability {\n        id\n        name\n        externalId\n        __typename\n      }\n    }\n  }\n}",
+                          "tsKeys": []
+                        },
+                        "granularity": "",
+                        "label": "",
+                        "latestValue": true,
+                        "relationshipsQuery": {
+                          "dataSetIds": [],
+                          "depth": 1,
+                          "isActiveAtTime": false,
+                          "isTypeTimeseries": false,
+                          "labels": {
+                            "containsAny": []
+                          },
+                          "limit": 1000,
+                          "sourceExternalIds": []
+                        },
+                        "tab": "Timeseries",
+                        "target": "DI11_PROD_ACT_DISP",
+                        "targetRefType": "externalId",
+                        "templateQuery": {
+                          "dataPath": "oEE_MachinesQuery.items",
+                          "datapointsPath": "GoodQuantity.datapoints",
+                          "graphQlQuery": "{\n  oEE_MachinesQuery {\n    items {\n      Facility\n      Line\n      GoodQuantity {\n        datapoints (start: $__from, end: $__to, , limit: 100){\n            value\n            timestamp\n        }\n      }\n    }\n  }\n}",
+                          "groupBy": "Facility"
+                        }
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "cognitedata-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfx6rswa7981sc"
+                      },
+                      "spec": {
+                        "aggregation": "average",
+                        "assetQuery": {
+                          "includeSubTimeseries": true,
+                          "includeSubtrees": false,
+                          "relationshipsQuery": {
+                            "dataSetIds": [],
+                            "depth": 1,
+                            "isActiveAtTime": false,
+                            "isTypeTimeseries": false,
+                            "labels": {
+                              "containsAny": []
+                            },
+                            "limit": 1000,
+                            "sourceExternalIds": []
+                          },
+                          "target": "",
+                          "withRelationships": false
+                        },
+                        "cogniteActivityQuery": {
+                          "enabled": false,
+                          "externalId": "CogniteActivity",
+                          "space": "cdf_cdm",
+                          "useScheduledTime": false,
+                          "version": "v1"
+                        },
+                        "cogniteActivityTabQuery": {
+                          "activeOnly": true,
+                          "assetInstances": [],
+                          "columns": [
+                            "externalId",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "externalId": "CogniteActivity",
+                          "instanceSpace": "",
+                          "resourceType": "CogniteAsset",
+                          "sort": [
+                            {
+                              "order": "asc",
+                              "property": "startTime"
+                            }
+                          ],
+                          "space": "cdf_cdm",
+                          "version": "v1"
+                        },
+                        "cogniteTimeSeries": {
+                          "externalId": "CogniteTimeSeries",
+                          "space": "cdf_cdm",
+                          "version": "v1"
+                        },
+                        "eventQuery": {
+                          "activeAtTimeRange": true,
+                          "advancedFilter": "",
+                          "aggregate": {
+                            "name": "uniqueValues",
+                            "properties": [],
+                            "withAggregate": false
+                          },
+                          "columns": [
+                            "externalId",
+                            "type",
+                            "subtype",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "expr": ""
+                        },
+                        "expr": "",
+                        "extractionPipelinesQuery": {
+                          "columns": [
+                            "name",
+                            "status",
+                            "lastUpdatedTime",
+                            "lastFailure",
+                            "lastSeen",
+                            "lastSuccess",
+                            "schedule",
+                            "data set",
+                            "message"
+                          ],
+                          "getRuns": false,
+                          "limit": 1000,
+                          "selections": []
+                        },
+                        "flexibleDataModellingQuery": {
+                          "externalId": "",
+                          "graphQlQuery": "{\n  listMachine {\n    items {\n      __typename\n      MachineWeight\n      Model\n      Anomalies {\n        externalId\n        id\n        name\n        __typename\n      }\n      Availability {\n        id\n        name\n        externalId\n        __typename\n      }\n    }\n  }\n}",
+                          "tsKeys": []
+                        },
+                        "granularity": "",
+                        "label": "",
+                        "latestValue": true,
+                        "relationshipsQuery": {
+                          "dataSetIds": [],
+                          "depth": 1,
+                          "isActiveAtTime": false,
+                          "isTypeTimeseries": false,
+                          "labels": {
+                            "containsAny": []
+                          },
+                          "limit": 1000,
+                          "sourceExternalIds": []
+                        },
+                        "tab": "Timeseries",
+                        "target": "MINSTER_L1_GOLPES_TURNO_ACT_DISP",
+                        "targetRefType": "externalId",
+                        "templateQuery": {
+                          "dataPath": "oEE_MachinesQuery.items",
+                          "datapointsPath": "GoodQuantity.datapoints",
+                          "graphQlQuery": "{\n  oEE_MachinesQuery {\n    items {\n      Facility\n      Line\n      GoodQuantity {\n        datapoints (start: $__from, end: $__to, , limit: 100){\n            value\n            timestamp\n        }\n      }\n    }\n  }\n}",
+                          "groupBy": "Facility"
+                        }
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "cognitedata-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfx6rswa7981sc"
+                      },
+                      "spec": {
+                        "aggregation": "none",
+                        "assetQuery": {
+                          "includeSubTimeseries": true,
+                          "includeSubtrees": false,
+                          "relationshipsQuery": {
+                            "dataSetIds": [],
+                            "depth": 1,
+                            "isActiveAtTime": false,
+                            "isTypeTimeseries": false,
+                            "labels": {
+                              "containsAny": []
+                            },
+                            "limit": 1000,
+                            "sourceExternalIds": []
+                          },
+                          "target": "",
+                          "withRelationships": false
+                        },
+                        "cogniteActivityQuery": {
+                          "enabled": false,
+                          "externalId": "CogniteActivity",
+                          "space": "cdf_cdm",
+                          "useScheduledTime": false,
+                          "version": "v1"
+                        },
+                        "cogniteActivityTabQuery": {
+                          "activeOnly": true,
+                          "assetInstances": [],
+                          "columns": [
+                            "externalId",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "externalId": "CogniteActivity",
+                          "instanceSpace": "",
+                          "resourceType": "CogniteAsset",
+                          "sort": [
+                            {
+                              "order": "asc",
+                              "property": "startTime"
+                            }
+                          ],
+                          "space": "cdf_cdm",
+                          "version": "v1"
+                        },
+                        "cogniteTimeSeries": {
+                          "externalId": "CogniteTimeSeries",
+                          "space": "cdf_cdm",
+                          "version": "v1"
+                        },
+                        "eventQuery": {
+                          "activeAtTimeRange": true,
+                          "advancedFilter": "",
+                          "aggregate": {
+                            "name": "uniqueValues",
+                            "properties": [],
+                            "withAggregate": false
+                          },
+                          "columns": [
+                            "externalId",
+                            "type",
+                            "subtype",
+                            "description",
+                            "startTime",
+                            "endTime"
+                          ],
+                          "expr": ""
+                        },
+                        "expr": "",
+                        "extractionPipelinesQuery": {
+                          "columns": [
+                            "name",
+                            "status",
+                            "lastUpdatedTime",
+                            "lastFailure",
+                            "lastSeen",
+                            "lastSuccess",
+                            "schedule",
+                            "data set",
+                            "message"
+                          ],
+                          "getRuns": false,
+                          "limit": 1000,
+                          "selections": []
+                        },
+                        "flexibleDataModellingQuery": {
+                          "externalId": "",
+                          "graphQlQuery": "{\n  listMachine {\n    items {\n      __typename\n      MachineWeight\n      Model\n      Anomalies {\n        externalId\n        id\n        name\n        __typename\n      }\n      Availability {\n        id\n        name\n        externalId\n        __typename\n      }\n    }\n  }\n}",
+                          "tsKeys": []
+                        },
+                        "granularity": "",
+                        "label": "",
+                        "latestValue": true,
+                        "relationshipsQuery": {
+                          "dataSetIds": [],
+                          "depth": 1,
+                          "isActiveAtTime": false,
+                          "isTypeTimeseries": false,
+                          "labels": {
+                            "containsAny": []
+                          },
+                          "limit": 1000,
+                          "sourceExternalIds": []
+                        },
+                        "tab": "Timeseries",
+                        "target": "PRINTER_L1_PROD_ACT_DISP",
+                        "targetRefType": "externalId",
+                        "templateQuery": {
+                          "dataPath": "oEE_MachinesQuery.items",
+                          "datapointsPath": "GoodQuantity.datapoints",
+                          "graphQlQuery": "{\n  oEE_MachinesQuery {\n    items {\n      Facility\n      Line\n      GoodQuantity {\n        datapoints (start: $__from, end: $__to, , limit: 100){\n            value\n            timestamp\n        }\n      }\n    }\n  }\n}",
+                          "groupBy": "Facility"
+                        }
+                      }
+                    },
+                    "refId": "C",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "canvas",
+            "version": "13.0.2",
+            "spec": {
+              "options": {
+                "inlineEditing": true,
+                "panZoom": false,
+                "root": {
+                  "background": {
+                    "color": {
+                      "fixed": "transparent"
+                    },
+                    "image": {
+                      "fixed": "https://ingedaca-polar-shared-bucket.s3.us-east-1.amazonaws.com/dashboard+Superenvases+4.png"
+                    },
+                    "size": "fill"
+                  },
+                  "border": {
+                    "color": {
+                      "fixed": "dark-green"
+                    }
+                  },
+                  "constraint": {
+                    "horizontal": "left",
+                    "vertical": "top"
+                  },
+                  "elements": [
+                    {
+                      "background": {
+                        "color": {
+                          "fixed": "super-light-yellow"
+                        }
+                      },
+                      "border": {
+                        "color": {
+                          "fixed": "dark-green"
+                        }
+                      },
+                      "config": {
+                        "align": "center",
+                        "color": {
+                          "fixed": "#000000"
+                        },
+                        "size": 20,
+                        "text": {
+                          "field": "MINSTER_L1_GOLPES_TURNO_ACT_DISP",
+                          "fixed": "",
+                          "mode": "field"
+                        },
+                        "valign": "middle"
+                      },
+                      "connections": [],
+                      "constraint": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "links": [],
+                      "name": "Element 1",
+                      "placement": {
+                        "height": 31.994495391845703,
+                        "left": 125,
+                        "top": 592,
+                        "width": 78.9789810180664
+                      },
+                      "type": "metric-value"
+                    },
+                    {
+                      "background": {
+                        "color": {
+                          "fixed": "super-light-yellow"
+                        }
+                      },
+                      "border": {
+                        "color": {
+                          "fixed": "dark-green"
+                        }
+                      },
+                      "config": {
+                        "align": "center",
+                        "color": {
+                          "fixed": "#000000"
+                        },
+                        "size": 20,
+                        "text": {
+                          "field": "DI11_PROD_ACT_DISP",
+                          "fixed": "",
+                          "mode": "field"
+                        },
+                        "valign": "middle"
+                      },
+                      "connections": [],
+                      "constraint": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "links": [],
+                      "name": "Element 2",
+                      "placement": {
+                        "height": 31.994495391845703,
+                        "left": 619,
+                        "top": 570,
+                        "width": 94.98248291015625
+                      },
+                      "type": "metric-value"
+                    },
+                    {
+                      "background": {
+                        "color": {
+                          "fixed": "super-light-yellow"
+                        }
+                      },
+                      "border": {
+                        "color": {
+                          "fixed": "dark-green"
+                        }
+                      },
+                      "config": {
+                        "align": "center",
+                        "color": {
+                          "fixed": "#000000"
+                        },
+                        "size": 20,
+                        "text": {
+                          "field": "PRINTER_L1_PROD_ACT_DISP",
+                          "fixed": "",
+                          "mode": "field"
+                        },
+                        "valign": "middle"
+                      },
+                      "connections": [],
+                      "constraint": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "links": [],
+                      "name": "Element 3",
+                      "placement": {
+                        "height": 31.994495391845703,
+                        "left": 883,
+                        "top": 205,
+                        "width": 94.98248291015625
+                      },
+                      "type": "metric-value"
+                    }
+                  ],
+                  "name": "Element 1788480394194",
+                  "placement": {
+                    "height": 100,
+                    "left": 0,
+                    "rotation": 0,
+                    "top": 0,
+                    "width": 100
+                  },
+                  "type": "frame"
+                },
+                "showAdvancedTypes": true,
+                "tooltip": {
+                  "disableForOneClick": false,
+                  "mode": "single"
+                },
+                "zoomToContent": false
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      },
+                      {
+                        "value": 80,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "kind": "GridLayout",
+      "spec": {
+        "items": [
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 1,
+              "y": 0,
+              "width": 22,
+              "height": 19,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-1"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "links": [],
+    "liveNow": false,
+    "preload": false,
+    "tags": [],
+    "timeSettings": {
+      "timezone": "browser",
+      "from": "now-6h",
+      "to": "now",
+      "autoRefresh": "5m",
+      "autoRefreshIntervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ],
+      "hideTimepicker": false,
+      "weekStart": "monday",
+      "fiscalYearStartMonth": 0
+    },
+    "title": "Dashboard",
+    "variables": [],
+    "preferences": {
+      "layout": {
+        "kind": "GridLayout",
+        "spec": {
+          "items": []
+        }
+      }
+    }
+  }
+}
