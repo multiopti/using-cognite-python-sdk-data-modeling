@@ -607,48 +607,110 @@ _GENERATORS = {
 }
 
 
-def _write_line_type_rollups(client, configs: list, results: list, timestamp_ms: int, dry_run: bool) -> dict:
+_PRODUCTION_KEYS = ["hourly_production", "golpes_bobina_hora"]
+_SCRAP_KEYS = ["short_cans_per_hour", "trimmer_jams_per_hour", "hourly_retrac", "blow_off"]
+# Machine types whose events carry a scrap figure at all -- MINSTER and
+# ISPRAY never do (see generate_minster_event/generate_ispray_event), so a
+# _SCRAP_ derived series is never created for them, rather than existing
+# and always reading 0.
+_SCRAP_TRACKING_TYPES = {"DI", "STANDUM", "PRINTER"}
+
+
+def _meta_num(meta: dict, keys: list, default: float = 0.0) -> float:
+    """First matching key wins -- for fields where only one alias is ever
+    present on a given event (production count)."""
+    meta_lower = {str(k).lower(): v for k, v in meta.items()}
+    for k in keys:
+        kl = k.lower()
+        if kl in meta_lower and meta_lower[kl] is not None:
+            try:
+                return float(str(meta_lower[kl]).replace("%", "").strip())
+            except (ValueError, TypeError):
+                continue
+    return default
+
+
+def _meta_sum(meta: dict, keys: list) -> float:
+    """Sums every matching key -- for scrap counters, where a single event
+    (Standum/D&I/Printer) can carry more than one of these at once."""
+    meta_lower = {str(k).lower(): v for k, v in meta.items()}
+    total = 0.0
+    for k in keys:
+        kl = k.lower()
+        if kl in meta_lower and meta_lower[kl] is not None:
+            try:
+                total += float(str(meta_lower[kl]).replace("%", "").strip())
+            except (ValueError, TypeError):
+                continue
+    return total
+
+
+def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int, dry_run: bool) -> dict:
     """
-    Rolls up each machine's already-computed hourly production/scrap (no raw
-    counters re-read here) into per-line and per-line-per-type totals, and
-    writes them as single datapoints on small derived timeseries -- e.g.
-    LINE1_DI_PRODUCTION_HOURLY, LINE1_DI_SCRAP_HOURLY, LINE1_PRODUCTION_HOURLY.
+    Recomputes the SHIFT-TO-DATE running total (not just this hour's delta)
+    for each line and (line, type), and writes it as a single datapoint on a
+    small derived timeseries -- e.g. LINE1_DI_PRODUCTION_SHIFT,
+    LINE1_DI_SCRAP_SHIFT, LINE1_PRODUCTION_SHIFT ("_SHIFT", not "_HOURLY":
+    this used to write just the current hour's value, but a shift-running
+    total is more useful for the customer-facing Grafana dashboard -- it
+    shows how the shift is going so far, not just a number that resets
+    every hour).
+
+    This re-reads every hourly Production Report event already written this
+    shift (entry_01 through the current entry_slot, inclusive) for every
+    machine, rather than trusting in-memory results from just this run --
+    the exact same approach overview_dashboard's load_overview() uses to
+    compute its shift totals, so the two can never silently drift apart
+    (e.g. from a manual backfill of one earlier hour changing the true
+    total without this function's own in-memory state knowing about it).
 
     This exists for the customer-facing Grafana dashboard (grafana/
-    dashboard.json): its Cognite datasource can query a plain timeseries
-    directly, but its Events query only exposes a fixed column set and can't
-    surface a custom metadata field like pct_eficiencia/hourly_production --
+    dashboard_linea1.json etc.): its Cognite datasource can query a plain
+    timeseries directly, but its Events query only exposes a fixed column
+    set and can't surface a custom metadata field like hourly_production --
     so Grafana needs these clean, pre-aggregated numbers as real timeseries
     rather than reading our Production Report events itself.
-
-    Only machines whose generator actually ran (status "ok" or "dry_run")
-    contribute; a skipped/errored machine is left out of the sum rather than
-    treated as zero, so one machine's error doesn't silently understate a
-    whole line's total.
     """
+    current_slot = int(ctx["entry_slot"])
+    ext_ids_by_code = {
+        cfg["code"]: [
+            f"report_{cfg['code']}_{ctx['date_str']}_{ctx['shift_code']}_entry_{slot:02d}"
+            for slot in range(1, current_slot + 1)
+        ]
+        for cfg in configs
+    }
+    all_ext_ids = [eid for eids in ext_ids_by_code.values() for eid in eids]
+    events = client.events.retrieve_multiple(external_ids=all_ext_ids, ignore_unknown_ids=True)
+    event_by_ext_id = {e.external_id: e for e in events}
+
     by_line = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
     by_line_type = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
 
-    for cfg, res in zip(configs, results):
-        if res.get("status") not in ("ok", "dry_run"):
-            continue
-        production = res.get("production")
-        if production is None:
-            continue
+    for cfg in configs:
         line = cfg["line"]
         m_type = cfg["machine_type"].upper()
-        scrap = res.get("scrap")
+        has_scrap_type = m_type in _SCRAP_TRACKING_TYPES
 
-        by_line[line]["production"] += production
-        by_line_type[(line, m_type)]["production"] += production
-        if scrap is not None:
-            by_line[line]["scrap"] += scrap
-            by_line[line]["has_scrap"] = True
-            by_line_type[(line, m_type)]["scrap"] += scrap
-            by_line_type[(line, m_type)]["has_scrap"] = True
+        for eid in ext_ids_by_code[cfg["code"]]:
+            event = event_by_ext_id.get(eid)
+            if event is None:
+                # No event for this hour (e.g. it errored, or hasn't run
+                # yet) -- excluded rather than treated as zero.
+                continue
+            meta = event.metadata or {}
+            production = _meta_num(meta, _PRODUCTION_KEYS)
+            scrap = _meta_sum(meta, _SCRAP_KEYS) if has_scrap_type else 0.0
+
+            by_line[line]["production"] += production
+            by_line_type[(line, m_type)]["production"] += production
+            if has_scrap_type:
+                by_line[line]["scrap"] += scrap
+                by_line[line]["has_scrap"] = True
+                by_line_type[(line, m_type)]["scrap"] += scrap
+                by_line_type[(line, m_type)]["has_scrap"] = True
 
     # asset_ext_id each derived series should attach to -- e.g.
-    # LINE1_DI_PRODUCTION_HOURLY -> SuperenvasesMQTT_L1_DI (the real parent
+    # LINE1_DI_PRODUCTION_SHIFT -> SuperenvasesMQTT_L1_DI (the real parent
     # asset of DI11/.../DI18), so these show up in the CDF asset hierarchy
     # like every other timeseries instead of being orphaned.
     datapoints = {}
@@ -656,20 +718,20 @@ def _write_line_type_rollups(client, configs: list, results: list, timestamp_ms:
     for line, agg in by_line.items():
         n = line[1:]
         line_asset = LINE_ASSET_EXT_ID.get(line)
-        datapoints[f"LINE{n}_PRODUCTION_HOURLY"] = agg["production"]
-        asset_ext_id_by_ts[f"LINE{n}_PRODUCTION_HOURLY"] = line_asset
+        datapoints[f"LINE{n}_PRODUCTION_SHIFT"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_PRODUCTION_SHIFT"] = line_asset
         if agg["has_scrap"]:
-            datapoints[f"LINE{n}_SCRAP_HOURLY"] = agg["scrap"]
-            asset_ext_id_by_ts[f"LINE{n}_SCRAP_HOURLY"] = line_asset
+            datapoints[f"LINE{n}_SCRAP_SHIFT"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_SCRAP_SHIFT"] = line_asset
 
     for (line, m_type), agg in by_line_type.items():
         n = line[1:]
         type_asset = LINE_TYPE_ASSET_EXT_ID.get((line, m_type))
-        datapoints[f"LINE{n}_{m_type}_PRODUCTION_HOURLY"] = agg["production"]
-        asset_ext_id_by_ts[f"LINE{n}_{m_type}_PRODUCTION_HOURLY"] = type_asset
+        datapoints[f"LINE{n}_{m_type}_PRODUCTION_SHIFT"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_{m_type}_PRODUCTION_SHIFT"] = type_asset
         if agg["has_scrap"]:
-            datapoints[f"LINE{n}_{m_type}_SCRAP_HOURLY"] = agg["scrap"]
-            asset_ext_id_by_ts[f"LINE{n}_{m_type}_SCRAP_HOURLY"] = type_asset
+            datapoints[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = type_asset
 
     # Several derived series share the same parent asset (e.g. both
     # LINE1_PRODUCTION_HOURLY and LINE1_SCRAP_HOURLY point at
@@ -782,7 +844,14 @@ def run_all_production_reports(client, data: dict = None) -> dict:
         "errors": sum(1 for r in results if r.get("status") == "error"),
     }
 
-    rollups = _write_line_type_rollups(client, configs, results, end_ms, dry_run)
+    # Always the full roster here, never the (possibly machine_codes-
+    # restricted) `configs` used for the event-writing loop above: this
+    # rollup re-reads already-written events independently from CDF, so a
+    # restricted test run (e.g. machine_codes=["ispray31"]) must not narrow
+    # it down to a partial, wrong shift total for that machine's whole
+    # (line, type) group.
+    rollup_ctx = _shift_context(last_hour_start_local)
+    rollups = _write_line_type_rollups(client, MACHINE_CONFIGS, rollup_ctx, end_ms, dry_run)
 
     return {
         "window": {

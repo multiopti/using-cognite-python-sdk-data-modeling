@@ -18,7 +18,7 @@ def render_efficiency_gauge(value_pct: float, color: str, title: str) -> go.Figu
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=round(value_pct, 1),
-        number={"suffix": "%", "font": {"size": 30}},
+        number={"suffix": "%", "font": {"size": 22}},
         title={"text": title, "font": {"size": 13}},
         gauge={
             "axis": {"range": [0, 100], "tickfont": {"size": 10}},

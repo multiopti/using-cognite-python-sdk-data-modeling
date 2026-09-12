@@ -222,7 +222,7 @@ MACHINE_CONFIGS = [
 # of being orphaned. These already exist in CDF as the natural grouping
 # assets above the individual machines -- e.g. SuperenvasesMQTT_L1_DI is the
 # parent asset of DI11/DI12/.../DI18, so it's the right anchor for
-# LINE1_DI_PRODUCTION_HOURLY. Where a line has only one machine of a type
+# LINE1_DI_PRODUCTION_SHIFT. Where a line has only one machine of a type
 # (Minster, and Printer on Línea 1), that machine's own asset is used since
 # there's no separate group asset for it.
 LINE_ASSET_EXT_ID = {
