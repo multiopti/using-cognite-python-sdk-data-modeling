@@ -79,6 +79,7 @@ from config import (
     LINE_TYPE_ASSET_EXT_ID,
     LOCAL_TZ,
     MACHINE_CONFIGS,
+    PLANT_ASSET_EXT_ID,
 )
 
 
@@ -609,6 +610,11 @@ _GENERATORS = {
 
 _PRODUCTION_KEYS = ["hourly_production", "golpes_bobina_hora"]
 _SCRAP_KEYS = ["short_cans_per_hour", "trimmer_jams_per_hour", "hourly_retrac", "blow_off"]
+# Same key lists as overview_dashboard/config.py's EFFICIENCY_KEYS/
+# DOWNTIME_KEYS, kept in sync manually since the Function and the Streamlit
+# apps are deployed and packaged separately and can't share a module.
+_EFFICIENCY_KEYS = ["pct_eficiencia", "efficiency"]
+_DOWNTIME_KEYS = ["downtime_minutes", "total_downtime_min"]
 # Machine types whose events carry a scrap figure at all -- MINSTER and
 # ISPRAY never do (see generate_minster_event/generate_ispray_event), so a
 # _SCRAP_ derived series is never created for them, rather than existing
@@ -686,11 +692,29 @@ def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int
     by_line = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
     by_line_type = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
 
+    # Plant-wide and per-line KPIs mirroring overview_dashboard/main.py's
+    # "Dashboard General" calculations exactly, so the Grafana version of
+    # that dashboard can never show a different number than the Streamlit
+    # one for the same shift:
+    #   - efficiency: mean of pct_eficiencia over active hours only
+    #     (hourly_production > 0), same as main.py's avg_efficiency.
+    #   - downtime: sum of downtime_minutes over EVERY hour this shift
+    #     (active or not), same as main.py's total_downtime.
+    #   - machines_active: count of machines whose most recent EXISTING
+    #     event this shift shows nonzero production, same as main.py's
+    #     latest_per_machine-based count.
+    global_eff_sum, global_eff_count = 0.0, 0
+    global_downtime = 0.0
+    line_eff_sum = defaultdict(float)
+    line_eff_count = defaultdict(int)
+    machines_active = 0
+
     for cfg in configs:
         line = cfg["line"]
         m_type = cfg["machine_type"].upper()
         has_scrap_type = m_type in _SCRAP_TRACKING_TYPES
 
+        latest_production = None
         for eid in ext_ids_by_code[cfg["code"]]:
             event = event_by_ext_id.get(eid)
             if event is None:
@@ -700,6 +724,7 @@ def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int
             meta = event.metadata or {}
             production = _meta_num(meta, _PRODUCTION_KEYS)
             scrap = _meta_sum(meta, _SCRAP_KEYS) if has_scrap_type else 0.0
+            downtime = _meta_num(meta, _DOWNTIME_KEYS)
 
             by_line[line]["production"] += production
             by_line_type[(line, m_type)]["production"] += production
@@ -708,6 +733,24 @@ def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int
                 by_line[line]["has_scrap"] = True
                 by_line_type[(line, m_type)]["scrap"] += scrap
                 by_line_type[(line, m_type)]["has_scrap"] = True
+
+            global_downtime += downtime
+            if production > 0:
+                efficiency = _meta_num(meta, _EFFICIENCY_KEYS)
+                global_eff_sum += efficiency
+                global_eff_count += 1
+                line_eff_sum[line] += efficiency
+                line_eff_count[line] += 1
+
+            # ext_ids_by_code is ordered slot 1..current_slot and missing
+            # hours are skipped above (`continue`), so whatever this
+            # variable holds after the loop is production from the
+            # highest-numbered hour that actually has an event -- same row
+            # main.py's `.groupby("machine_code").last()` would pick.
+            latest_production = production
+
+        if latest_production is not None and latest_production > 0:
+            machines_active += 1
 
     # asset_ext_id each derived series should attach to -- e.g.
     # LINE1_DI_PRODUCTION_SHIFT -> SuperenvasesMQTT_L1_DI (the real parent
@@ -732,6 +775,25 @@ def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int
         if agg["has_scrap"]:
             datapoints[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = agg["scrap"]
             asset_ext_id_by_ts[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = type_asset
+
+    # Plant-wide and per-line KPIs for the Grafana "Dashboard General"
+    # equivalent -- same formulas as overview_dashboard/main.py's KPI row
+    # and per-line efficiency gauges, anchored on PlantaSuperenvasesMQTT
+    # (both lines' common parent asset) or the relevant line asset.
+    datapoints["GLOBAL_EFFICIENCY_SHIFT"] = (global_eff_sum / global_eff_count) if global_eff_count else 0.0
+    asset_ext_id_by_ts["GLOBAL_EFFICIENCY_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["GLOBAL_DOWNTIME_SHIFT"] = global_downtime
+    asset_ext_id_by_ts["GLOBAL_DOWNTIME_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["GLOBAL_SCRAP_SHIFT"] = sum(agg["scrap"] for agg in by_line.values())
+    asset_ext_id_by_ts["GLOBAL_SCRAP_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["MACHINES_ACTIVE_SHIFT"] = float(machines_active)
+    asset_ext_id_by_ts["MACHINES_ACTIVE_SHIFT"] = PLANT_ASSET_EXT_ID
+
+    for line in by_line:
+        n = line[1:]
+        count = line_eff_count[line]
+        datapoints[f"LINE{n}_EFFICIENCY_SHIFT"] = (line_eff_sum[line] / count) if count else 0.0
+        asset_ext_id_by_ts[f"LINE{n}_EFFICIENCY_SHIFT"] = LINE_ASSET_EXT_ID.get(line)
 
     # Several derived series share the same parent asset (e.g. both
     # LINE1_PRODUCTION_HOURLY and LINE1_SCRAP_HOURLY point at

@@ -240,6 +240,11 @@ LINE_TYPE_ASSET_EXT_ID = {
     ("L3", "ISPRAY"): "SuperenvasesMQTT_L3_ISPRAY",
 }
 
+# Parent of both SuperenvasesMQTT_L1 and SuperenvasesMQTT_L3 in CDF -- anchor
+# for the plant-wide (both lines combined) derived series (GLOBAL_*), the
+# same way LINE_ASSET_EXT_ID anchors the per-line ones.
+PLANT_ASSET_EXT_ID = "PlantaSuperenvasesMQTT"
+
 HOUR_INTERVAL_MAP = {
     6: "6 a 7",    7: "7 a 8",    8: "8 a 9",    9: "9 a 10",
     10: "10 a 11", 11: "11 a 12", 12: "12 a 1",  13: "1 a 2",
