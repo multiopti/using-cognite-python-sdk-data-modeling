@@ -16,14 +16,22 @@ reads, but nothing is written back until dry_run is explicitly turned off.
 import copy
 import io
 from datetime import datetime, timedelta
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
+import boto3
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
 from config import (
+    ATTACHMENT_NAME,
+    AWS_REGION,
     DATA_SET_ID,
     DI15_INTRODUCED_DATE,
     DI_MACHINES,
+    EMAIL_FROM,
+    EMAIL_TO,
     FILE_EXTERNAL_ID,
     LOCAL_TZ,
     MACHINE_MAP,
@@ -118,11 +126,14 @@ def _col_index(header: list, *, exact: str = None, contains: str = None) -> int:
     raise ValueError(f"Column not found (exact={exact!r}, contains={contains!r}) in header={header!r}")
 
 
-def _fill_shift_blanks(client, wb, fecha_date, turno: str, shift_code: str, date_str: str) -> dict:
+def _fill_shift_blanks(client, wb, fecha_date, turno: str, shift_code: str, date_str: str, force: bool = False) -> dict:
     """
     Fills the 3 data columns for every row matching (FECHA, TURNO) whose
     MAQUINA maps to a real CDF machine code AND whose cells are currently
-    blank (idempotent -- a re-run never clobbers an already-filled cell).
+    blank (idempotent by default -- a re-run never clobbers an already-
+    filled cell). force=True overwrites already-filled cells too, for
+    re-running a shift after shift_reconciler has corrected its underlying
+    hourly events (e.g. a machine caught mid-backfill after an outage).
     """
     filled = {}
     for sheet_name in SHEET_CONFIG:
@@ -145,7 +156,7 @@ def _fill_shift_blanks(client, wb, fecha_date, turno: str, shift_code: str, date
             code = MACHINE_MAP.get(maquina)
             if code is None:
                 continue
-            if row[prod_col - 1].value is not None:
+            if row[prod_col - 1].value is not None and not force:
                 continue  # already filled, don't overwrite
             prod, sc, tj = _shift_totals(client, code, date_str, shift_code)
             row[prod_col - 1].value = prod
@@ -296,22 +307,72 @@ def _extend_scaffold(wb, through_date) -> dict:
     return added
 
 
-def _upload_workbook(client, wb):
+def _upload_workbook(client, wb) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
+    content = buf.getvalue()
     client.files.upload_bytes(
-        content=buf.read(),
+        content=content,
         name="short_can_report.xlsx",
         external_id=FILE_EXTERNAL_ID,
         data_set_id=DATA_SET_ID,
         overwrite=True,
     )
+    return content
 
 
-def handle(client, data: dict = None) -> dict:
+def _send_report_email(content: bytes, ctx: dict, secrets: dict = None) -> str:
+    """
+    secrets carries AWS credentials when running as a deployed CDF Function
+    -- that sandbox has no ~/.aws/credentials file for boto3's default
+    credential chain to find, unlike a local run authenticated via the AWS
+    CLI. If secrets has aws_access_key_id/aws_secret_access_key (configured
+    on the Function itself in Fusion, see README), boto3 is built with them
+    explicitly; otherwise it falls back to the default chain, which is what
+    makes local testing work with zero extra setup.
+    """
+    turno_label = "1er turno (dia)" if ctx["shift_code"] == "day" else "2do turno (noche)"
+    fecha_label = ctx["fecha"].strftime("%d/%m/%Y")
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"Short Can - D&I y STD - {fecha_label} {turno_label}"
+    msg["From"] = EMAIL_FROM
+    msg["To"] = EMAIL_TO
+    msg.attach(MIMEText(
+        f"Adjunto el reporte de produccion actualizado (D&I y Standum) "
+        f"para el turno del {fecha_label} ({turno_label}).",
+        "plain",
+    ))
+    part = MIMEApplication(content, Name=ATTACHMENT_NAME)
+    part["Content-Disposition"] = f'attachment; filename="{ATTACHMENT_NAME}"'
+    msg.attach(part)
+
+    # Fusion's Secrets UI caps keys at 15 chars and only allows lowercase
+    # letters, digits, and dashes -- ruling out boto3's own
+    # aws_access_key_id/aws_secret_access_key names (too long, underscores).
+    secrets = secrets or {}
+    # .strip() guards against stray whitespace/newlines from a copy-paste
+    # into Fusion's secret value field -- AWS's signature check fails
+    # (SignatureDoesNotMatch) on a secret key with even one extra character.
+    aws_key = (secrets.get("aws-access-key") or "").strip() or None
+    aws_secret = (secrets.get("aws-secret-key") or "").strip() or None
+    if aws_key and aws_secret:
+        ses = boto3.client("ses", region_name=AWS_REGION, aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
+    else:
+        ses = boto3.client("ses", region_name=AWS_REGION)
+
+    response = ses.send_raw_email(
+        Source=EMAIL_FROM,
+        Destinations=[EMAIL_TO],
+        RawMessage={"Data": msg.as_bytes()},
+    )
+    return response["MessageId"]
+
+
+def handle(client, data: dict = None, secrets: dict = None) -> dict:  # noqa: F821 - injected by CDF at runtime
     data = data or {}
     dry_run = bool(data.get("dry_run", False))
+    force = bool(data.get("force", False))
 
     now_local = datetime.now(LOCAL_TZ)
     override_date_str = data.get("date_str")
@@ -325,7 +386,7 @@ def handle(client, data: dict = None) -> dict:
 
     wb = _download_workbook(client)
 
-    filled = _fill_shift_blanks(client, wb, ctx["fecha"], ctx["turno"], ctx["shift_code"], ctx["date_str"])
+    filled = _fill_shift_blanks(client, wb, ctx["fecha"], ctx["turno"], ctx["shift_code"], ctx["date_str"], force=force)
     di15_inserted = _ensure_di15_rows(wb, DI15_INTRODUCED_DATE)
     through_date = ctx["fecha"] + timedelta(days=SCAFFOLD_BUFFER_DAYS)
     scaffold_added = _extend_scaffold(wb, through_date)
@@ -337,9 +398,21 @@ def handle(client, data: dict = None) -> dict:
         "di15_rows_inserted": di15_inserted,
         "scaffold_rows_added": scaffold_added,
         "dry_run": dry_run,
+        "email_sent": False,
     }
 
     if not dry_run:
-        _upload_workbook(client, wb)
+        content = _upload_workbook(client, wb)
+
+        # Only email when this run actually wrote new shift data (or was an
+        # explicit force-correction) -- an idempotent no-op re-run (nothing
+        # in `filled`) would otherwise re-send the same report on every
+        # retry/duplicate schedule trigger. `send_email` in `data` overrides
+        # this either way, for a deliberate manual resend or to suppress it.
+        should_email = data.get("send_email", bool(filled) or force)
+        if should_email:
+            message_id = _send_report_email(content, ctx, secrets=secrets)
+            result["email_sent"] = True
+            result["email_message_id"] = message_id
 
     return result

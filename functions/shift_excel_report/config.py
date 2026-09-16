@@ -49,3 +49,11 @@ SHIFT_CODE_TO_TURNO = {"day": "1ER", "night": "2DO"}
 _PRODUCTION_KEYS = ["hourly_production"]
 _SHORT_CAN_KEYS = ["short_cans_per_hour"]
 _TRIMMER_JAM_KEYS = ["trimmer_jams_per_hour"]
+
+# AWS SES email delivery. Region matters here specifically because SES
+# identity verification is per-region, not account-wide -- both identities
+# below are verified in us-east-2, not the AWS CLI's default us-east-1.
+EMAIL_FROM = "gustavo.ingedaca@gmail.com"
+EMAIL_TO = "gustavo.sanchez@ingedaca.com"  # internal address for now -- switch to the real customer once validated
+AWS_REGION = "us-east-2"
+ATTACHMENT_NAME = "short_can_report.xlsx"

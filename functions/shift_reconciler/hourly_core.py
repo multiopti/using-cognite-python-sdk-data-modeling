@@ -1,0 +1,936 @@
+"""
+Hourly production report -- Cognite Function.
+
+Ported from notebooks/Notebooks_dataset_220726_113831_CreateHourlyReport.ipynb.
+Same KPI logic as the notebook; changes made while porting are noted inline
+and summarized here:
+
+1. Asset IDs are resolved ONCE per invocation via a single batched
+   `assets.retrieve_multiple()` call, instead of one `assets.retrieve()` (or
+   worse, a fuzzy `assets.search()`) per machine inside the loop. The
+   mapping never changes hour to hour, so the notebook was spending up to
+   ~25 API calls every single run resolving something static.
+2. The fuzzy-search fallback (used only when a machine's asset_ext_id truly
+   isn't found) now returns a warning describing exactly what it matched,
+   surfaced both in the function's return value and in stdout. Previously
+   it silently trusted the first search hit with no record of it happening
+   -- a wrong match would attach a whole hour of production data to the
+   wrong physical machine with nothing to flag it.
+3. The identical shift/date/slot/hour-label calculation that was
+   copy-pasted into all five generate_*_event functions is now one shared
+   helper, _shift_context().
+4. Each generate_*_event function returns a small result dict instead of
+   only printing, and the orchestrator aggregates a structured summary
+   (counts of ok/skipped/error, plus per-machine detail) as the function's
+   JSON return value -- visible in Fusion's function call history, not just
+   in logs someone has to go looking for.
+5. `data` now optionally accepts `hours_ago` (int, default 1 -- reproduces
+   the original "most recently completed hour" behavior) and
+   `machine_codes` (list[str], to restrict a run to specific machines).
+   This gives you a manual backfill/retry path for a specific hour or
+   machine without waiting for the next schedule -- the notebook had no
+   such mechanism, so a transient failure meant that hour's data for that
+   machine was just gone.
+6. `data` also accepts `dry_run` (bool, default False). All the reads
+   (asset resolution, time series counters) still hit real CDF -- there's
+   no local copy of this data to test against -- but the final
+   `client.events.upsert()` is skipped, and the would-be event payload is
+   returned instead. This is what local_test.py uses by default, so running
+   it against your real CDF project doesn't write or overwrite anything
+   until you deliberately turn dry_run off.
+7. `calculate_hourly_counter_delta()`'s reset handling (not from the
+   notebook's original design, but a bug found after this ran live for a
+   while) used to add a downward step's absolute post-step value into the
+   hourly delta whenever it saw ANY decrease, on the assumption that any
+   decrease meant "the counter reset to 0, so the new reading IS the
+   increment since reset." On a large cumulative counter, a downward step
+   that's just noise (not an actual reset) doesn't land near 0 -- so this
+   injected the counter's entire multi-million absolute value into a
+   single hour, observed live on MINSTER_L1. Now only a step landing at/
+   near 0 (see `_RESET_TO_ZERO_EPS`) counts as a real reset; any other
+   downward step is logged and excluded from the delta as noise.
+8. `calculate_hourly_counter_delta()` also drops any datapoint with a
+   negative value before doing anything else with it (another live-data
+   finding, not from the notebook). A cumulative counter can never
+   legitimately go negative -- readings of exactly -1001 (production
+   counters) or -1 (secondary counters), always at the same timestamps
+   across a device's signals, turned out to be a communication-error
+   sentinel, not real values. Without this filter, a comm-error reading
+   like -1001 satisfies `curr_val < _RESET_TO_ZERO_EPS` and gets treated
+   as "reset to zero", adding that negative number straight into the
+   hourly delta -- silently under-reporting production for that hour.
+
+Deployment and scheduling: see README.md in this folder.
+"""
+from collections import defaultdict
+from datetime import datetime, timedelta
+from cognite.client.data_classes import EventWrite, TimeSeriesWrite
+from cognite.client.exceptions import CogniteNotFoundError
+
+from config import (
+    CAN_WEIGHT_KG,
+    CANS_PER_SHORT_CAN,
+    CANS_PER_TRIMMER_JAM,
+    DATA_SET_ID,
+    DOWNTIME_PER_SHORT_CAN_MIN,
+    DOWNTIME_PER_TRIM_JAM_MIN,
+    HOUR_INTERVAL_MAP,
+    LINE_ASSET_EXT_ID,
+    LINE_TYPE_ASSET_EXT_ID,
+    LOCAL_TZ,
+    MACHINE_CONFIGS,
+    PLANT_ASSET_EXT_ID,
+)
+
+
+def _shift_context(last_hour_start_local: datetime) -> dict:
+    """
+    Shift/date/slot/hour-label calculation shared by every generate_*_event
+    function (previously duplicated identically five times in the notebook).
+    """
+    start_hour_local = last_hour_start_local.hour
+
+    # Day: 06:00-18:00 | Night: 18:00-06:00
+    shift_code = "day" if 6 <= start_hour_local < 18 else "night"
+    shift_start_hour = 6 if shift_code == "day" else 18
+
+    # Overnight hours (00:00-05:59) belong to the shift that started the
+    # previous calendar day.
+    shift_date = (
+        last_hour_start_local - timedelta(days=1)
+        if start_hour_local < 6
+        else last_hour_start_local
+    )
+    date_str = shift_date.strftime("%Y%m%d")
+
+    hour_index = ((start_hour_local - shift_start_hour) % 24) + 1
+    entry_slot = f"{hour_index:02d}"
+
+    hour_interval = HOUR_INTERVAL_MAP.get(
+        start_hour_local,
+        f"{start_hour_local} a {(start_hour_local + 1) % 24}",
+    )
+
+    return {
+        "shift_code": shift_code,
+        "date_str": date_str,
+        "entry_slot": entry_slot,
+        "hour_interval": hour_interval,
+    }
+
+
+def _resolve_asset_ids(client, ext_ids: list) -> tuple:
+    """
+    Resolves CDF asset IDs for a list of external_ids in ONE batched call.
+
+    Returns (id_by_ext_id, warnings). Any external_id not found by exact
+    lookup falls back to a fuzzy name search -- inherently risky, since it
+    can match a similarly-named but wrong asset -- so every time it fires, a
+    warning describing exactly what was matched is recorded instead of
+    silently trusting the first hit.
+    """
+    id_by_ext_id = {}
+    warnings = []
+
+    found = client.assets.retrieve_multiple(external_ids=ext_ids, ignore_unknown_ids=True)
+    for asset in found:
+        id_by_ext_id[asset.external_id] = asset.id
+
+    missing = [e for e in ext_ids if e not in id_by_ext_id]
+    for ext_id in missing:
+        res = client.assets.search(query=ext_id, limit=5)
+        if res:
+            match = res[0]
+            id_by_ext_id[ext_id] = match.id
+            warnings.append(
+                f"Asset '{ext_id}' not found by external_id -- fell back to search and "
+                f"matched '{match.name}' (external_id={match.external_id}, id={match.id}). "
+                "Verify this is the correct asset."
+            )
+        else:
+            warnings.append(f"Could not resolve asset '{ext_id}' by external_id or search.")
+
+    return id_by_ext_id, warnings
+
+
+_RESET_TO_ZERO_EPS = 1.0  # a genuine counter reset lands at/near 0, not just "lower than before"
+
+
+def calculate_hourly_counter_delta(client, external_id: str, start_ms: int, end_ms: int):
+    """
+    Calculates step-by-step counter accumulation and handles mid-hour resets.
+    """
+    try:
+        dps = client.time_series.data.retrieve(
+            external_id=external_id,
+            start=start_ms,
+            end=end_ms,
+            limit=None,
+            ignore_unknown_ids=True,
+        )
+
+        def safe_float(val) -> float:
+            try:
+                return float(val) if val is not None else 0.0
+            except (ValueError, TypeError):
+                return 0.0
+
+        # A negative reading (seen live: exactly -1001 on production counters,
+        # -1 on secondary ones, always in lockstep across a device's signals)
+        # means the PLC/sensor connection dropped, not a real counter value --
+        # a cumulative counter can never legitimately go negative. Drop these
+        # before the scan below so a comm-error blip can't get misread as a
+        # counter reset (curr_val < _RESET_TO_ZERO_EPS would otherwise treat
+        # e.g. -1001 as "reset to zero" and add that negative value into the
+        # hourly delta, silently under-reporting production for that hour).
+        dps = [dp for dp in dps if dp.value is not None and safe_float(dp.value) >= 0] if dps else dps
+
+        if not dps or len(dps) == 0:
+            print(f"  [Warning] [{external_id}] No datapoints found in window.")
+            return 0.0, False
+
+        first_value = safe_float(dps[0].value)
+        last_value = safe_float(dps[-1].value)
+
+        if len(dps) == 1:
+            print(f"  [{external_id}] First: {first_value:,.1f} | Last: {last_value:,.1f} | Delta: 0.0 | Reset: False")
+            return 0.0, False
+
+        hourly_delta = 0.0
+        reset_occurred = False
+
+        for i in range(1, len(dps)):
+            prev_val = safe_float(dps[i - 1].value)
+            curr_val = safe_float(dps[i].value)
+            step_diff = curr_val - prev_val
+
+            if step_diff < 0:
+                if curr_val < _RESET_TO_ZERO_EPS:
+                    # Counter genuinely reset (rolled back to ~0) -- curr_val IS the
+                    # increment since the reset.
+                    reset_occurred = True
+                    hourly_delta += curr_val
+                else:
+                    # Downward step that didn't land near 0 isn't a real reset -- on a
+                    # large cumulative counter (e.g. millions of lifetime strokes) this
+                    # is sensor/telemetry noise. Treating curr_val as the delta here
+                    # previously injected the counter's entire absolute value into a
+                    # single hour (seen live: an 11M-count blip read as one hour of
+                    # MINSTER production). Exclude it instead.
+                    print(f"  [Warning] [{external_id}] Downward step not at 0 (prev={prev_val:,.1f} -> curr={curr_val:,.1f}); treating as noise, excluded from delta.")
+            else:
+                hourly_delta += step_diff
+
+        print(f"  [{external_id}] First: {first_value:,.1f} | Last: {last_value:,.1f} | Delta: {hourly_delta:,.1f} | Reset: {reset_occurred}")
+        return hourly_delta, reset_occurred
+
+    except CogniteNotFoundError:
+        # Belt-and-suspenders: ignore_unknown_ids=True above should already
+        # prevent this from firing for a missing time series.
+        print(f"  [Warning] TimeSeries '{external_id}' not found.")
+        return 0.0, False
+    except Exception as e:
+        print(f"  [Error] Reading '{external_id}': {e}")
+        return 0.0, False
+
+
+def _finalize_event(client, event: EventWrite, dry_run: bool, label: str, agg: dict = None) -> dict:
+    """
+    Either upserts `event` to CDF, or (dry_run=True) skips the write
+    entirely and returns what WOULD have been written -- lets you validate
+    the KPI math against real, live CDF data (real time series reads) without
+    creating or overwriting any real event. Safe to run against production.
+
+    `agg` carries this machine's hourly production/scrap numbers through to
+    the caller regardless of dry_run/ok status, so run_all_production_reports
+    can roll them up into the per-line/per-type derived timeseries without
+    re-reading the raw counters a second time. {"production": float,
+    "scrap": float | None} -- scrap is None for machine types that don't
+    track it (MINSTER, ISPRAY).
+    """
+    machine_code = event.metadata.get("machine_code") or event.metadata.get("printer_code")
+    agg = agg or {}
+
+    if dry_run:
+        print(f"  --> [DRY RUN] Would upsert {label} Event: '{event.external_id}' (nothing written)")
+        print(f"      metadata: {event.metadata}")
+        return {
+            "code": machine_code,
+            "status": "dry_run",
+            "external_id": event.external_id,
+            "metadata": event.metadata,
+            **agg,
+        }
+
+    res = client.events.upsert(event)
+    ext_id = res.external_id if hasattr(res, "external_id") else res[0].external_id
+    cdf_id = res.id if hasattr(res, "id") else res[0].id
+    print(f"  --> Successfully posted {label} Event: '{ext_id}' (CDF ID: {cdf_id})")
+    return {"code": machine_code, "status": "ok", "external_id": ext_id, "id": cdf_id, **agg}
+
+
+def generate_printer_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
+    ctx = _shift_context(last_hour_start_local)
+    printer_code = cfg["code"]
+    nominal_cap = cfg.get("nominal_capacity", 0.0)
+
+    hourly_production, prod_reset = calculate_hourly_counter_delta(client, cfg["ts_prod"], start_ms, end_ms)
+    hourly_retrac, retrac_reset = calculate_hourly_counter_delta(client, cfg["ts_retract"], start_ms, end_ms)
+    blow_off, blowoff_reset = calculate_hourly_counter_delta(client, cfg["ts_blow_off"], start_ms, end_ms)
+
+    if nominal_cap > 0:
+        downtime_minutes = max(0.0, round(60.0 - ((hourly_production * 60.0) / nominal_cap), 2))
+        efficiency = round((hourly_production * 100.0) / nominal_cap, 2)
+    else:
+        downtime_minutes = 60.0
+        efficiency = 0.0
+
+    event_ext_id = f"report_{printer_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
+
+    resets = [name for name, flag in (("prod", prod_reset), ("retrac", retrac_reset), ("blow_off", blowoff_reset)) if flag]
+    obs_text = f"Resets detected: {', '.join(resets)}" if resets else "Operación estándar"
+
+    report_event = EventWrite(
+        external_id=event_ext_id,
+        data_set_id=DATA_SET_ID,
+        type="Production Report",
+        subtype="Hourly Entry",
+        start_time=start_ms,
+        end_time=end_ms,
+        description=f"Production Report {ctx['hour_interval']} for Printer {printer_code.upper()}",
+        asset_ids=[asset_id],
+        metadata={
+            "timezone": "GMT-4",
+            "printer_code": printer_code,
+            "shift": ctx["shift_code"],
+            "hour_interval": ctx["hour_interval"],
+            "hourly_production": str(hourly_production),
+            "hourly_retrac": str(hourly_retrac),
+            "blow_off": str(blow_off),
+            "downtime_minutes": str(downtime_minutes),
+            "efficiency": f"{efficiency:.2f}%",
+            "observations": obs_text,
+        },
+    )
+
+    return _finalize_event(
+        client, report_event, dry_run, label="Printer",
+        agg={"production": hourly_production, "scrap": hourly_retrac + blow_off},
+    )
+
+
+def generate_di_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
+    ctx = _shift_context(last_hour_start_local)
+    machine_code = cfg["code"]
+
+    prod_count, prod_reset = calculate_hourly_counter_delta(client, cfg["ts_prod"], start_ms, end_ms)
+    short_count, short_reset = calculate_hourly_counter_delta(client, cfg["ts_short_cans"], start_ms, end_ms)
+    trim_count, trim_reset = calculate_hourly_counter_delta(client, cfg["ts_trimmer_jams"], start_ms, end_ms)
+
+    cans_from_short = short_count * CANS_PER_SHORT_CAN
+    cans_from_trim = trim_count * CANS_PER_TRIMMER_JAM
+
+    downtime_short = short_count * DOWNTIME_PER_SHORT_CAN_MIN
+    downtime_trim = trim_count * DOWNTIME_PER_TRIM_JAM_MIN
+    # Zero production means the machine wasn't running, regardless of what the
+    # short-can/trimmer-jam counters show -- without this, an hour with no
+    # output and no logged defects fell through to 0 downtime (100% "Operación
+    # normal"), reading a fully idle hour as a perfect one.
+    total_downtime_min = 60.0 if prod_count == 0 else min(60.0, downtime_short + downtime_trim)
+
+    total_scrap_cans = cans_from_short + cans_from_trim
+    merma_kg = round(total_scrap_cans * CAN_WEIGHT_KG, 2)
+
+    total_produced_and_lost = prod_count + total_scrap_cans
+    pct_merma = (
+        round((total_scrap_cans / total_produced_and_lost * 100.0), 2)
+        if total_produced_and_lost > 0
+        else 0.0
+    )
+    pct_eficiencia = round(((60.0 - total_downtime_min) / 60.0 * 100.0), 2)
+
+    resets = [name for name, flag in (("prod", prod_reset), ("short_cans", short_reset), ("trimmer_jams", trim_reset)) if flag]
+
+    obs_parts = []
+    if prod_count == 0:
+        obs_parts.append("Sin producción")
+    elif total_downtime_min == 0:
+        obs_parts.append("Operación normal")
+    elif short_count > 0 and trim_count > 0:
+        obs_parts.append("Parada por latas cortas y trancamiento")
+    elif short_count > 0:
+        obs_parts.append("Parada por latas cortas")
+    else:
+        obs_parts.append("Parada por trancamiento trimmer")
+    if resets:
+        obs_parts.append(f"(Resets: {', '.join(resets)})")
+    obs_text = " ".join(obs_parts)
+
+    event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
+
+    report_event = EventWrite(
+        external_id=event_ext_id,
+        data_set_id=DATA_SET_ID,
+        type="Production Report",
+        subtype="Hourly Entry DI",
+        start_time=start_ms,
+        end_time=end_ms,
+        description=f"Production Report {ctx['hour_interval']} for D&I Machine {machine_code.upper()}",
+        asset_ids=[asset_id],
+        metadata={
+            "timezone": "GMT-4",
+            "machine_code": machine_code.upper(),
+            "shift": ctx["shift_code"],
+            "hour_interval": ctx["hour_interval"],
+            "hourly_production": str(int(prod_count)),
+            "short_cans_per_hour": str(int(short_count)),
+            "trimmer_jams_per_hour": str(int(trim_count)),
+            "cans_by_short_can": str(int(cans_from_short)),
+            "cans_by_trimmer_jam": str(int(cans_from_trim)),
+            "downtime_by_short_can_min": f"{downtime_short:.2f}",
+            "downtime_by_trimmer_jam_min": f"{downtime_trim:.2f}",
+            "total_downtime_min": f"{total_downtime_min:.2f}",
+            "merma_kg": f"{merma_kg:.2f}",
+            "pct_merma": f"{pct_merma:.2f}%",
+            "pct_eficiencia": f"{pct_eficiencia:.2f}%",
+            "observations": obs_text,
+        },
+    )
+
+    return _finalize_event(
+        client, report_event, dry_run, label="D&I",
+        agg={"production": prod_count, "scrap": short_count + trim_count},
+    )
+
+
+def generate_standum_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
+    ctx = _shift_context(last_hour_start_local)
+    machine_code = cfg["code"]
+
+    hourly_production, prod_reset = calculate_hourly_counter_delta(client, cfg["ts_prod"], start_ms, end_ms)
+    short_count, short_reset = calculate_hourly_counter_delta(client, cfg["ts_short_cans"], start_ms, end_ms)
+    trim_count, trim_reset = calculate_hourly_counter_delta(client, cfg["ts_trimmer_jams"], start_ms, end_ms)
+
+    cans_from_short = short_count * CANS_PER_SHORT_CAN
+    cans_from_trim = trim_count * CANS_PER_TRIMMER_JAM
+
+    downtime_short = short_count * DOWNTIME_PER_SHORT_CAN_MIN
+    downtime_trim = trim_count * DOWNTIME_PER_TRIM_JAM_MIN
+    # Zero production means the machine wasn't running, regardless of what the
+    # short-can/trimmer-jam counters show -- without this, an hour with no
+    # output and no logged defects fell through to 0 downtime (100% "Operación
+    # normal"), reading a fully idle hour as a perfect one.
+    total_downtime_min = 60.0 if hourly_production == 0 else min(60.0, downtime_short + downtime_trim)
+
+    total_scrap_cans = cans_from_short + cans_from_trim
+    merma_kg = round(total_scrap_cans * CAN_WEIGHT_KG, 2)
+
+    total_produced_and_lost = hourly_production + total_scrap_cans
+    pct_merma = (
+        round((total_scrap_cans / total_produced_and_lost * 100.0), 2)
+        if total_produced_and_lost > 0
+        else 0.0
+    )
+    pct_eficiencia = round(((60.0 - total_downtime_min) / 60.0 * 100.0), 2)
+
+    resets = [name for name, flag in (("prod", prod_reset), ("short_cans", short_reset), ("trimmer_jams", trim_reset)) if flag]
+
+    obs_parts = []
+    if hourly_production == 0:
+        obs_parts.append("Sin producción")
+    elif total_downtime_min == 0:
+        obs_parts.append("Operación normal")
+    elif short_count > 0 and trim_count > 0:
+        obs_parts.append("Parada por latas cortas y trancamiento")
+    elif short_count > 0:
+        obs_parts.append("Parada por latas cortas")
+    else:
+        obs_parts.append("Parada por trancamiento trimmer")
+    if resets:
+        obs_parts.append(f"(Resets: {', '.join(resets)})")
+    obs_text = " ".join(obs_parts)
+
+    event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
+
+    report_event = EventWrite(
+        external_id=event_ext_id,
+        data_set_id=DATA_SET_ID,
+        type="Production Report",
+        subtype="Hourly Entry Standum",
+        start_time=start_ms,
+        end_time=end_ms,
+        description=f"Production Report {ctx['hour_interval']} for Standum {machine_code.upper()}",
+        asset_ids=[asset_id],
+        metadata={
+            "timezone": "GMT-4",
+            "machine_code": machine_code.upper(),
+            "shift": ctx["shift_code"],
+            "hour_interval": ctx["hour_interval"],
+            "hourly_production": str(int(hourly_production)),
+            "short_cans_per_hour": str(int(short_count)),
+            "trimmer_jams_per_hour": str(int(trim_count)),
+            "cans_by_short_can": str(int(cans_from_short)),
+            "cans_by_trimmer_jam": str(int(cans_from_trim)),
+            "downtime_by_short_can_min": f"{downtime_short:.2f}",
+            "downtime_by_trimmer_jam_min": f"{downtime_trim:.2f}",
+            "total_downtime_min": f"{total_downtime_min:.2f}",
+            "merma_kg": f"{merma_kg:.2f}",
+            "pct_merma": f"{pct_merma:.2f}%",
+            "pct_eficiencia": f"{pct_eficiencia:.2f}%",
+            "observations": obs_text,
+        },
+    )
+
+    return _finalize_event(
+        client, report_event, dry_run, label="Standum",
+        agg={"production": hourly_production, "scrap": short_count + trim_count},
+    )
+
+
+def generate_minster_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
+    """
+    Tracks Coil Strokes (Golpes Bobina) and Shift Strokes (Golpes Turno).
+    Efficiency is based on hourly coil strokes without scrap/mermas.
+    """
+    ctx = _shift_context(last_hour_start_local)
+    machine_code = cfg["code"]
+    nominal_cap = cfg.get("nominal_capacity", 120000.0)
+
+    golpes_bob, bob_reset = calculate_hourly_counter_delta(client, cfg["ts_golpes_bob"], start_ms, end_ms)
+    golpes_turno, turno_reset = calculate_hourly_counter_delta(client, cfg["ts_golpes_turno"], start_ms, end_ms)
+
+    hourly_production = golpes_bob
+
+    efficiency = round((hourly_production * 100.0) / nominal_cap, 2) if nominal_cap > 0 else 0.0
+    downtime_minutes = (
+        max(0.0, round(60.0 - ((hourly_production * 60.0) / nominal_cap), 2))
+        if nominal_cap > 0
+        else 0.0
+    )
+
+    resets = [name for name, flag in (("golpes_bobina", bob_reset), ("golpes_turno", turno_reset)) if flag]
+    if hourly_production == 0:
+        obs_text = "Sin producción"
+    elif resets:
+        obs_text = f"Resets detectados: {', '.join(resets)}"
+    else:
+        obs_text = "Operación normal"
+
+    event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
+
+    report_event = EventWrite(
+        external_id=event_ext_id,
+        data_set_id=DATA_SET_ID,
+        type="Production Report",
+        subtype="Hourly Entry MINSTER",
+        start_time=start_ms,
+        end_time=end_ms,
+        description=f"Production Report {ctx['hour_interval']} for MINSTER {machine_code.upper()}",
+        asset_ids=[asset_id],
+        metadata={
+            "timezone": "GMT-4",
+            "machine_code": machine_code.upper(),
+            "shift": ctx["shift_code"],
+            "hour_interval": ctx["hour_interval"],
+            "golpes_bobina_hora": str(int(golpes_bob)),
+            "golpes_turno_hora": str(int(golpes_turno)),
+            "hourly_production": str(int(hourly_production)),
+            "pct_eficiencia": f"{efficiency:.2f}%",
+            "downtime_minutes": f"{downtime_minutes:.2f}",
+            "observations": obs_text,
+        },
+    )
+
+    return _finalize_event(
+        client, report_event, dry_run, label="MINSTER",
+        agg={"production": hourly_production, "scrap": None},
+    )
+
+
+def generate_ispray_event(client, cfg: dict, start_ms: int, end_ms: int, last_hour_start_local: datetime, asset_id: int, dry_run: bool = False) -> dict:
+    """
+    Production and efficiency only (no scrap/mermas tracked for ISPRAY).
+    """
+    ctx = _shift_context(last_hour_start_local)
+    machine_code = cfg["code"]
+    nominal_cap = cfg.get("nominal_capacity", 30000.0)
+
+    hourly_production, prod_reset = calculate_hourly_counter_delta(client, cfg["ts_prod"], start_ms, end_ms)
+
+    efficiency = round((hourly_production * 100.0) / nominal_cap, 2) if nominal_cap > 0 else 0.0
+    downtime_minutes = (
+        max(0.0, round(60.0 - ((hourly_production * 60.0) / nominal_cap), 2))
+        if nominal_cap > 0
+        else 0.0
+    )
+
+    if hourly_production == 0:
+        obs_text = "Sin producción"
+    elif prod_reset:
+        obs_text = "Reset detectado en contador"
+    else:
+        obs_text = "Operación normal"
+    event_ext_id = f"report_{machine_code}_{ctx['date_str']}_{ctx['shift_code']}_entry_{ctx['entry_slot']}"
+
+    report_event = EventWrite(
+        external_id=event_ext_id,
+        data_set_id=DATA_SET_ID,
+        type="Production Report",
+        subtype="Hourly Entry ISPRAY",
+        start_time=start_ms,
+        end_time=end_ms,
+        description=f"Production Report {ctx['hour_interval']} for ISPRAY {machine_code.upper()}",
+        asset_ids=[asset_id],
+        metadata={
+            "timezone": "GMT-4",
+            "machine_code": machine_code.upper(),
+            "shift": ctx["shift_code"],
+            "hour_interval": ctx["hour_interval"],
+            "hourly_production": str(int(hourly_production)),
+            "pct_eficiencia": f"{efficiency:.2f}%",
+            "downtime_minutes": f"{downtime_minutes:.2f}",
+            "observations": obs_text,
+        },
+    )
+
+    return _finalize_event(
+        client, report_event, dry_run, label="ISPRAY",
+        agg={"production": hourly_production, "scrap": None},
+    )
+
+
+_GENERATORS = {
+    "printer": generate_printer_event,
+    "standum": generate_standum_event,
+    "di": generate_di_event,
+    "minster": generate_minster_event,
+    "ispray": generate_ispray_event,
+}
+
+
+_PRODUCTION_KEYS = ["hourly_production", "golpes_bobina_hora"]
+_SCRAP_KEYS = ["short_cans_per_hour", "trimmer_jams_per_hour", "hourly_retrac", "blow_off"]
+# Same key lists as overview_dashboard/config.py's EFFICIENCY_KEYS/
+# DOWNTIME_KEYS, kept in sync manually since the Function and the Streamlit
+# apps are deployed and packaged separately and can't share a module.
+_EFFICIENCY_KEYS = ["pct_eficiencia", "efficiency"]
+_DOWNTIME_KEYS = ["downtime_minutes", "total_downtime_min"]
+# Machine types whose events carry a scrap figure at all -- MINSTER and
+# ISPRAY never do (see generate_minster_event/generate_ispray_event), so a
+# _SCRAP_ derived series is never created for them, rather than existing
+# and always reading 0.
+_SCRAP_TRACKING_TYPES = {"DI", "STANDUM", "PRINTER"}
+
+
+def _meta_num(meta: dict, keys: list, default: float = 0.0) -> float:
+    """First matching key wins -- for fields where only one alias is ever
+    present on a given event (production count)."""
+    meta_lower = {str(k).lower(): v for k, v in meta.items()}
+    for k in keys:
+        kl = k.lower()
+        if kl in meta_lower and meta_lower[kl] is not None:
+            try:
+                return float(str(meta_lower[kl]).replace("%", "").strip())
+            except (ValueError, TypeError):
+                continue
+    return default
+
+
+def _meta_sum(meta: dict, keys: list) -> float:
+    """Sums every matching key -- for scrap counters, where a single event
+    (Standum/D&I/Printer) can carry more than one of these at once."""
+    meta_lower = {str(k).lower(): v for k, v in meta.items()}
+    total = 0.0
+    for k in keys:
+        kl = k.lower()
+        if kl in meta_lower and meta_lower[kl] is not None:
+            try:
+                total += float(str(meta_lower[kl]).replace("%", "").strip())
+            except (ValueError, TypeError):
+                continue
+    return total
+
+
+def _write_line_type_rollups(client, configs: list, ctx: dict, timestamp_ms: int, dry_run: bool) -> dict:
+    """
+    Recomputes the SHIFT-TO-DATE running total (not just this hour's delta)
+    for each line and (line, type), and writes it as a single datapoint on a
+    small derived timeseries -- e.g. LINE1_DI_PRODUCTION_SHIFT,
+    LINE1_DI_SCRAP_SHIFT, LINE1_PRODUCTION_SHIFT ("_SHIFT", not "_HOURLY":
+    this used to write just the current hour's value, but a shift-running
+    total is more useful for the customer-facing Grafana dashboard -- it
+    shows how the shift is going so far, not just a number that resets
+    every hour).
+
+    This re-reads every hourly Production Report event already written this
+    shift (entry_01 through the current entry_slot, inclusive) for every
+    machine, rather than trusting in-memory results from just this run --
+    the exact same approach overview_dashboard's load_overview() uses to
+    compute its shift totals, so the two can never silently drift apart
+    (e.g. from a manual backfill of one earlier hour changing the true
+    total without this function's own in-memory state knowing about it).
+
+    This exists for the customer-facing Grafana dashboard (grafana/
+    dashboard_linea1.json etc.): its Cognite datasource can query a plain
+    timeseries directly, but its Events query only exposes a fixed column
+    set and can't surface a custom metadata field like hourly_production --
+    so Grafana needs these clean, pre-aggregated numbers as real timeseries
+    rather than reading our Production Report events itself.
+    """
+    current_slot = int(ctx["entry_slot"])
+    ext_ids_by_code = {
+        cfg["code"]: [
+            f"report_{cfg['code']}_{ctx['date_str']}_{ctx['shift_code']}_entry_{slot:02d}"
+            for slot in range(1, current_slot + 1)
+        ]
+        for cfg in configs
+    }
+    all_ext_ids = [eid for eids in ext_ids_by_code.values() for eid in eids]
+    events = client.events.retrieve_multiple(external_ids=all_ext_ids, ignore_unknown_ids=True)
+    event_by_ext_id = {e.external_id: e for e in events}
+
+    by_line = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
+    by_line_type = defaultdict(lambda: {"production": 0.0, "scrap": 0.0, "has_scrap": False})
+
+    # Plant-wide and per-line KPIs mirroring overview_dashboard/main.py's
+    # "Dashboard General" calculations exactly, so the Grafana version of
+    # that dashboard can never show a different number than the Streamlit
+    # one for the same shift:
+    #   - efficiency: mean of pct_eficiencia over active hours only
+    #     (hourly_production > 0), same as main.py's avg_efficiency.
+    #   - downtime: sum of downtime_minutes over EVERY hour this shift
+    #     (active or not), same as main.py's total_downtime.
+    #   - machines_active: count of machines whose most recent EXISTING
+    #     event this shift shows nonzero production, same as main.py's
+    #     latest_per_machine-based count.
+    global_eff_sum, global_eff_count = 0.0, 0
+    global_downtime = 0.0
+    line_eff_sum = defaultdict(float)
+    line_eff_count = defaultdict(int)
+    machines_active = 0
+
+    for cfg in configs:
+        line = cfg["line"]
+        m_type = cfg["machine_type"].upper()
+        has_scrap_type = m_type in _SCRAP_TRACKING_TYPES
+
+        latest_production = None
+        for eid in ext_ids_by_code[cfg["code"]]:
+            event = event_by_ext_id.get(eid)
+            if event is None:
+                # No event for this hour (e.g. it errored, or hasn't run
+                # yet) -- excluded rather than treated as zero.
+                continue
+            meta = event.metadata or {}
+            production = _meta_num(meta, _PRODUCTION_KEYS)
+            scrap = _meta_sum(meta, _SCRAP_KEYS) if has_scrap_type else 0.0
+            downtime = _meta_num(meta, _DOWNTIME_KEYS)
+
+            by_line[line]["production"] += production
+            by_line_type[(line, m_type)]["production"] += production
+            if has_scrap_type:
+                by_line[line]["scrap"] += scrap
+                by_line[line]["has_scrap"] = True
+                by_line_type[(line, m_type)]["scrap"] += scrap
+                by_line_type[(line, m_type)]["has_scrap"] = True
+
+            global_downtime += downtime
+            if production > 0:
+                efficiency = _meta_num(meta, _EFFICIENCY_KEYS)
+                global_eff_sum += efficiency
+                global_eff_count += 1
+                line_eff_sum[line] += efficiency
+                line_eff_count[line] += 1
+
+            # ext_ids_by_code is ordered slot 1..current_slot and missing
+            # hours are skipped above (`continue`), so whatever this
+            # variable holds after the loop is production from the
+            # highest-numbered hour that actually has an event -- same row
+            # main.py's `.groupby("machine_code").last()` would pick.
+            latest_production = production
+
+        if latest_production is not None and latest_production > 0:
+            machines_active += 1
+
+    # asset_ext_id each derived series should attach to -- e.g.
+    # LINE1_DI_PRODUCTION_SHIFT -> SuperenvasesMQTT_L1_DI (the real parent
+    # asset of DI11/.../DI18), so these show up in the CDF asset hierarchy
+    # like every other timeseries instead of being orphaned.
+    datapoints = {}
+    asset_ext_id_by_ts = {}
+    for line, agg in by_line.items():
+        n = line[1:]
+        line_asset = LINE_ASSET_EXT_ID.get(line)
+        datapoints[f"LINE{n}_PRODUCTION_SHIFT"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_PRODUCTION_SHIFT"] = line_asset
+        if agg["has_scrap"]:
+            datapoints[f"LINE{n}_SCRAP_SHIFT"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_SCRAP_SHIFT"] = line_asset
+
+    for (line, m_type), agg in by_line_type.items():
+        n = line[1:]
+        type_asset = LINE_TYPE_ASSET_EXT_ID.get((line, m_type))
+        datapoints[f"LINE{n}_{m_type}_PRODUCTION_SHIFT"] = agg["production"]
+        asset_ext_id_by_ts[f"LINE{n}_{m_type}_PRODUCTION_SHIFT"] = type_asset
+        if agg["has_scrap"]:
+            datapoints[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = agg["scrap"]
+            asset_ext_id_by_ts[f"LINE{n}_{m_type}_SCRAP_SHIFT"] = type_asset
+
+    # Plant-wide and per-line KPIs for the Grafana "Dashboard General"
+    # equivalent -- same formulas as overview_dashboard/main.py's KPI row
+    # and per-line efficiency gauges, anchored on PlantaSuperenvasesMQTT
+    # (both lines' common parent asset) or the relevant line asset.
+    datapoints["GLOBAL_EFFICIENCY_SHIFT"] = (global_eff_sum / global_eff_count) if global_eff_count else 0.0
+    asset_ext_id_by_ts["GLOBAL_EFFICIENCY_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["GLOBAL_DOWNTIME_SHIFT"] = global_downtime
+    asset_ext_id_by_ts["GLOBAL_DOWNTIME_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["GLOBAL_SCRAP_SHIFT"] = sum(agg["scrap"] for agg in by_line.values())
+    asset_ext_id_by_ts["GLOBAL_SCRAP_SHIFT"] = PLANT_ASSET_EXT_ID
+    datapoints["MACHINES_ACTIVE_SHIFT"] = float(machines_active)
+    asset_ext_id_by_ts["MACHINES_ACTIVE_SHIFT"] = PLANT_ASSET_EXT_ID
+
+    for line in by_line:
+        n = line[1:]
+        count = line_eff_count[line]
+        datapoints[f"LINE{n}_EFFICIENCY_SHIFT"] = (line_eff_sum[line] / count) if count else 0.0
+        asset_ext_id_by_ts[f"LINE{n}_EFFICIENCY_SHIFT"] = LINE_ASSET_EXT_ID.get(line)
+
+    # Several derived series share the same parent asset (e.g. both
+    # LINE1_PRODUCTION_HOURLY and LINE1_SCRAP_HOURLY point at
+    # SuperenvasesMQTT_L1), so dedupe before resolving -- CDF's API rejects a
+    # retrieve_multiple() call whose external_ids list has repeats.
+    unique_asset_ext_ids = list(dict.fromkeys(a for a in asset_ext_id_by_ts.values() if a is not None))
+    asset_id_by_ext_id, asset_warnings = _resolve_asset_ids(client, unique_asset_ext_ids)
+    for w in asset_warnings:
+        print(f"  [Warning] {w}")
+
+    if dry_run:
+        print("\n--- [DRY RUN] Would write derived line/type rollup timeseries ---")
+        for eid, val in sorted(datapoints.items()):
+            asset_ext_id = asset_ext_id_by_ts.get(eid)
+            asset_id = asset_id_by_ext_id.get(asset_ext_id) if asset_ext_id else None
+            print(f"  {eid}: {val:,.1f}  (asset: {asset_ext_id} -> id {asset_id})")
+        return {"dry_run": True, "datapoints": datapoints}
+
+    external_ids = list(datapoints.keys())
+    existing = client.time_series.retrieve_multiple(external_ids=external_ids, ignore_unknown_ids=True)
+    existing_ids = {ts.external_id for ts in existing}
+    missing = [eid for eid in external_ids if eid not in existing_ids]
+    if missing:
+        client.time_series.create([
+            TimeSeriesWrite(
+                external_id=eid, name=eid, is_step=True, data_set_id=DATA_SET_ID,
+                asset_id=asset_id_by_ext_id.get(asset_ext_id_by_ts.get(eid)),
+            )
+            for eid in missing
+        ])
+        print(f"  Created {len(missing)} new derived timeseries: {missing}")
+
+    client.time_series.data.insert_multiple([
+        {"external_id": eid, "datapoints": [(timestamp_ms, value)]}
+        for eid, value in datapoints.items()
+    ])
+    print(f"  Wrote {len(datapoints)} derived line/type rollup datapoints.")
+    return {"dry_run": False, "datapoints": datapoints}
+
+
+def run_all_production_reports(client, data: dict = None) -> dict:
+    data = data or {}
+
+    # hours_ago=1 (default) reproduces the notebook's original behavior:
+    # process the most recently completed hour. hours_ago=2 re-processes
+    # the hour before that, etc. -- use this for manual backfill of a
+    # specific missed/failed hour.
+    hours_ago = int(data.get("hours_ago", 1))
+
+    # Optional: restrict this run to specific machine codes (as in
+    # MACHINE_CONFIGS's "code" field, case-insensitive) instead of all of
+    # them -- useful for testing or re-running a single machine.
+    only_codes = data.get("machine_codes")
+
+    # Optional: compute everything (real reads from CDF time series/assets)
+    # but skip the final client.events.upsert() call -- lets you validate
+    # the KPI math against live data without writing/overwriting anything.
+    dry_run = bool(data.get("dry_run", False))
+
+    now_local = datetime.now(LOCAL_TZ)
+    last_hour_end_local = now_local.replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours_ago - 1)
+    last_hour_start_local = last_hour_end_local - timedelta(hours=1)
+
+    start_ms = int(last_hour_start_local.timestamp() * 1000)
+    end_ms = int(last_hour_end_local.timestamp() * 1000)
+
+    configs = MACHINE_CONFIGS
+    if only_codes:
+        wanted = {c.lower() for c in only_codes}
+        configs = [c for c in configs if c["code"].lower() in wanted]
+
+    print("=" * 80)
+    print(f"EXECUTION WINDOW (GMT-4): {last_hour_start_local.strftime('%Y-%m-%d %H:%M')} to {last_hour_end_local.strftime('%H:%M')}")
+    print("=" * 80)
+
+    id_by_ext_id, asset_warnings = _resolve_asset_ids(client, [c["asset_ext_id"] for c in configs])
+    for w in asset_warnings:
+        print(f"  [Warning] {w}")
+
+    results = []
+    for cfg in configs:
+        m_code = cfg["code"].upper()
+        m_type_clean = cfg.get("machine_type", "").lower().strip()
+        print(f"\n--- Processing [{m_type_clean.upper()}]: {m_code} ({cfg['asset_ext_id']}) ---")
+
+        generator = _GENERATORS.get(m_type_clean)
+        if generator is None:
+            msg = f"Unsupported machine type: '{cfg.get('machine_type')}'"
+            print(f"  [Warning] {msg}")
+            results.append({"code": cfg["code"], "status": "skipped", "reason": msg})
+            continue
+
+        asset_id = id_by_ext_id.get(cfg["asset_ext_id"])
+        if asset_id is None:
+            msg = f"Could not resolve asset '{cfg['asset_ext_id']}'"
+            print(f"  [Error] {msg}. Skipping {m_code}...")
+            results.append({"code": cfg["code"], "status": "error", "reason": msg})
+            continue
+
+        try:
+            results.append(generator(client, cfg, start_ms, end_ms, last_hour_start_local, asset_id, dry_run=dry_run))
+        except Exception as err:
+            print(f"  [Error] Unexpected exception for {m_code}: {err}. Skipping...")
+            results.append({"code": cfg["code"], "status": "error", "reason": str(err)})
+
+    summary = {
+        "ok": sum(1 for r in results if r.get("status") == "ok"),
+        "dry_run": sum(1 for r in results if r.get("status") == "dry_run"),
+        "skipped": sum(1 for r in results if r.get("status") == "skipped"),
+        "errors": sum(1 for r in results if r.get("status") == "error"),
+    }
+
+    # Always the full roster here, never the (possibly machine_codes-
+    # restricted) `configs` used for the event-writing loop above: this
+    # rollup re-reads already-written events independently from CDF, so a
+    # restricted test run (e.g. machine_codes=["ispray31"]) must not narrow
+    # it down to a partial, wrong shift total for that machine's whole
+    # (line, type) group.
+    rollup_ctx = _shift_context(last_hour_start_local)
+    rollups = _write_line_type_rollups(client, MACHINE_CONFIGS, rollup_ctx, end_ms, dry_run)
+
+    return {
+        "window": {
+            "start_local": last_hour_start_local.strftime("%Y-%m-%d %H:%M"),
+            "end_local": last_hour_end_local.strftime("%Y-%m-%d %H:%M"),
+            "timezone": "GMT-4",
+        },
+        "summary": summary,
+        "results": results,
+        "asset_resolution_warnings": asset_warnings,
+        "line_type_rollups": rollups,
+    }
+
+
+def handle(client: "CogniteClient" = None, data: dict = None) -> dict:  # noqa: F821 - injected by CDF at runtime
+    """
+    Cognite Function entry point. See run_all_production_reports() for what
+    `data` accepts (hours_ago, machine_codes, dry_run).
+    """
+    return run_all_production_reports(client, data)
