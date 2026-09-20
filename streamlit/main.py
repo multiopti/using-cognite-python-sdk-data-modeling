@@ -9,9 +9,12 @@ import pandas as pd
 from cognite.client.data_classes.capabilities import EventsAcl
 
 # Las importaciones locales van DESPUÉS de set_page_config
+import base64
+import io
+
 from config import (
     MACHINE_GROUPS, DAY_HOURS, NIGHT_HOURS,
-    INCIDENTES_OPCIONES, LOGO_URL, CUSTOM_CSS,
+    INCIDENTES_OPCIONES, LOGO_B64, CUSTOM_CSS,
     current_shift_defaults, get_display_columns
 )
 from cdf_service import (
@@ -31,7 +34,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # 2. Top Logo
 # ---------------------------------------------------------
 try:
-    st.image(LOGO_URL, width=130)
+    st.image(io.BytesIO(base64.b64decode(LOGO_B64)), width=130)
 except Exception:
     pass
 

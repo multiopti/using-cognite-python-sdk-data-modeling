@@ -1,0 +1,11 @@
+# Local development dependencies for the linea1_plant_view/ app.
+# Install into your existing venv (myenv):
+#   E:\source\repos\streamlit\myenv\Scripts\pip install -r linea1_plant_view\requirements.txt
+#
+# NOTE: this is NOT the same list you paste into CDF's hosted Streamlit app
+# package manager -- see linea1_plant_view/requirements-cdf.txt.
+
+streamlit>=1.38
+plotly>=5.22
+cognite-sdk[pandas]>=8.0.0rc1
+python-dotenv>=1.0

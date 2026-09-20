@@ -1,0 +1,11 @@
+# Packages to install from the "Manage packages" menu when this app is
+# deployed as a native Streamlit app INSIDE Cognite Data Fusion.
+#
+# Same set confirmed working for overview_dashboard/anomaly_monitor/
+# streamlit in this same Pyodide (stlite) runtime this session.
+
+cognite-sdk>=8,<9
+pyodide-httpx
+ssl
+authlib<1.7
+plotly

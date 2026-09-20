@@ -3,7 +3,9 @@ import streamlit as st
 # OBLIGATORIO: debe ser el primer comando de Streamlit que se ejecute
 st.set_page_config(page_title="Dashboard General de Producción", layout="wide")
 
+import base64
 import html
+import io
 
 import pandas as pd
 
@@ -11,7 +13,7 @@ from config import (
     CUSTOM_CSS,
     FLOW_ORDER,
     LINES,
-    LOGO_URL,
+    LOGO_B64,
     STATUS_COLORS,
     STATUS_LABELS,
     TYPE_COLORS,
@@ -29,7 +31,7 @@ header_col1, header_col2 = st.columns([3, 2])
 
 with header_col1:
     try:
-        st.image(LOGO_URL, width=130)
+        st.image(io.BytesIO(base64.b64decode(LOGO_B64)), width=130)
     except Exception:
         pass
     st.markdown("<h1 class='custom-title'>Dashboard General de Producción</h1>", unsafe_allow_html=True)

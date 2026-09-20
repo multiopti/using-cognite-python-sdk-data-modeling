@@ -3,11 +3,13 @@ import streamlit as st
 # OBLIGATORIO: debe ser el primer comando de Streamlit que se ejecute
 st.set_page_config(page_title="Monitor de Anomalías", layout="wide")
 
+import base64
 import html
+import io
 
 from config import (
     CUSTOM_CSS,
-    LOGO_URL,
+    LOGO_B64,
     MACHINE_TYPE_LABELS,
     PATTERN_INFO,
     SEVERITY_LABELS,
@@ -19,7 +21,7 @@ from cdf_service import load_anomaly_events
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 try:
-    st.image(LOGO_URL, width=130)
+    st.image(io.BytesIO(base64.b64decode(LOGO_B64)), width=130)
 except Exception:
     pass
 
