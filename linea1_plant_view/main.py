@@ -24,6 +24,11 @@ from config import (
     ELEMENT_HEIGHT,
     ELEMENT_WIDTH,
     ELEMENTS,
+    ISPRAY_COLUMN_X,
+    ISPRAY_LABEL,
+    ISPRAY_MACHINE_CODES,
+    ISPRAY_ROW_Y,
+    ISPRAY_VALUE_BOX_WIDTH,
     LOCAL_TZ,
     LOGO_B64,
     MINSTER_TARGET,
@@ -32,10 +37,11 @@ from config import (
     PLANT_IMAGE_B64,
     PLANT_IMAGE_HEIGHT,
     PLANT_IMAGE_WIDTH,
+    PLOT_Y_MAX,
     PLOT_Y_MIN,
     current_shift_label,
 )
-from cdf_service import load_di_machine_values, load_line1_values
+from cdf_service import load_line1_values, load_machine_values
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
@@ -52,10 +58,14 @@ st.markdown(
 )
 
 try:
-    values, di_values = await asyncio.gather(load_line1_values(), load_di_machine_values())
+    values, di_values, ispray_values = await asyncio.gather(
+        load_line1_values(),
+        load_machine_values(DI_MACHINE_CODES),
+        load_machine_values(ISPRAY_MACHINE_CODES),
+    )
 except Exception as e:
     st.error(f"Error consultando datos de CDF: {e}")
-    values, di_values = {}, {}
+    values, di_values, ispray_values = {}, {}, {}
 
 # ---------------------------------------------------------
 # Plant diagram with live values overlaid, mirroring the Grafana
@@ -115,58 +125,74 @@ fig.add_annotation(
     height=ELEMENT_HEIGHT,
 )
 
-# D&I: one column per physical machine (no line-level target -- see
-# cdf_service.load_di_machine_values), each stacking three numbers with no
-# text labels: machine number on top, Producción in the middle, Merma at
-# the bottom, below the image alongside MINSTER.
-for code, x in zip(DI_MACHINE_CODES, DI_COLUMN_X):
-    machine_no = code[2:]  # "DI11" -> "11"
-    totals = di_values.get(code, {})
-    production = totals.get("production")
-    scrap = totals.get("scrap")
 
-    rows = [
-        (DI_ROW_Y["number"], "neutral", machine_no, DI_NUMBER_BOX_WIDTH, DI_NUMBER_BOX_HEIGHT),
-        (
-            DI_ROW_Y["production"], "production",
-            f"{production:,.0f}" if production is not None else "--",
-            DI_VALUE_BOX_WIDTH, DI_VALUE_BOX_HEIGHT,
-        ),
-        (
-            DI_ROW_Y["scrap"], "scrap",
-            f"{scrap:,.0f}" if scrap is not None else "--",
-            DI_VALUE_BOX_WIDTH, DI_VALUE_BOX_HEIGHT,
-        ),
-    ]
-    for y, kind, text, box_width, box_height in rows:
-        colors = ELEMENT_COLORS[kind]
-        fig.add_annotation(
-            x=x, y=y,
-            xref="x", yref="y",
-            text=f"<b>{text}</b>",
-            showarrow=False,
-            align="center",
-            font=dict(size=12, color="#000000"),
-            bgcolor=colors["bg"],
-            bordercolor=colors["border"],
-            borderwidth=1.5,
-            borderpad=4,
-            width=box_width,
-            height=box_height,
-        )
+def add_machine_columns(codes, xs, row_y, machine_values, value_box_width):
+    """One column per physical machine (no line-level target -- see
+    cdf_service.load_machine_values), stacking unlabeled boxes: machine
+    number on top, then one box per value row present in row_y
+    ("production", and "scrap" only for machine types that track it)."""
+    for code, x in zip(codes, xs):
+        machine_no = "".join(ch for ch in code if ch.isdigit())  # "DI11" -> "11", "ISPRAY13" -> "13"
+        totals = machine_values.get(code, {})
+        rows = [(row_y["number"], "neutral", machine_no, DI_NUMBER_BOX_WIDTH, DI_NUMBER_BOX_HEIGHT)]
+        for kind in ("production", "scrap"):
+            if kind in row_y:
+                value = totals.get(kind)
+                text = f"{value:,.0f}" if value is not None else "--"
+                rows.append((row_y[kind], kind, text, value_box_width, DI_VALUE_BOX_HEIGHT))
+        for y, kind, text, box_width, box_height in rows:
+            colors = ELEMENT_COLORS[kind]
+            fig.add_annotation(
+                x=x, y=y,
+                xref="x", yref="y",
+                text=f"<b>{text}</b>",
+                showarrow=False,
+                align="center",
+                font=dict(size=12, color="#000000"),
+                bgcolor=colors["bg"],
+                bordercolor=colors["border"],
+                borderwidth=1.5,
+                borderpad=4,
+                width=box_width,
+                height=box_height,
+            )
 
-fig.update_xaxes(visible=False, range=[0, 1])
+
+# D&I: number / Producción / Merma, below the image alongside MINSTER.
+add_machine_columns(DI_MACHINE_CODES, DI_COLUMN_X, DI_ROW_Y, di_values, DI_VALUE_BOX_WIDTH)
+# ISPRAY: number / Producción (no scrap tracked), in the black band above the
+# ISPRAY conveyor, with its caption right above the boxes.
+add_machine_columns(ISPRAY_MACHINE_CODES, ISPRAY_COLUMN_X, ISPRAY_ROW_Y, ispray_values, ISPRAY_VALUE_BOX_WIDTH)
+fig.add_annotation(
+    x=ISPRAY_LABEL["x"], y=ISPRAY_LABEL["y"],
+    xref="x", yref="y",
+    text=ISPRAY_LABEL["text"],
+    showarrow=False,
+    font=dict(family="Arial, sans-serif", size=ISPRAY_LABEL["size"], color=ISPRAY_LABEL["color"]),
+)
+
+# Axes are locked to the image: autorange=False + fixedrange=True so neither
+# Plotly's autoscale nor a zoom/double-click can ever switch to auto-ranging.
+# With no data traces, autorange sizes the axes around the fixed-pixel
+# annotations instead of the image, which shrinks the diagram to nothing and
+# piles every box on top of each other.
+fig.update_xaxes(visible=False, range=[0, 1], autorange=False, fixedrange=True)
 fig.update_yaxes(
-    visible=False, range=[PLOT_Y_MIN, 1], scaleanchor="x", scaleratio=PLANT_IMAGE_HEIGHT / PLANT_IMAGE_WIDTH
+    visible=False, range=[PLOT_Y_MIN, PLOT_Y_MAX], autorange=False, fixedrange=True,
+    scaleanchor="x", scaleratio=PLANT_IMAGE_HEIGHT / PLANT_IMAGE_WIDTH,
 )
 fig.update_layout(
     margin=dict(l=0, r=0, t=0, b=0),
-    height=round(BASE_FIGURE_HEIGHT * (1 - PLOT_Y_MIN)),
+    height=round(BASE_FIGURE_HEIGHT * (PLOT_Y_MAX - PLOT_Y_MIN)),
     plot_bgcolor="black",
     paper_bgcolor="black",
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(
+    fig,
+    use_container_width=True,
+    config={"displayModeBar": False, "doubleClick": False, "scrollZoom": False},
+)
 
 st.markdown(
     f"<div style='color:#9ca3af; font-size:12px; margin-top:8px;'>"

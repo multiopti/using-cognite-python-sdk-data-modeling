@@ -3,7 +3,7 @@ import asyncio
 import streamlit as st
 
 from cdf_auth import get_async_client
-from config import DI_MACHINE_CODES, ELEMENTS, MINSTER_TARGET, current_shift_key
+from config import ELEMENTS, MINSTER_TARGET, current_shift_key
 
 
 @st.cache_resource
@@ -38,12 +38,12 @@ async def load_line1_values() -> dict:
     return values
 
 
-# --- D&I per-machine shift totals -----------------------------------------
-# hourly_production_report only writes a LINE-level D&I rollup
-# (LINE1_DI_PRODUCTION_SHIFT/_SCRAP_SHIFT), not one per physical machine, so
-# per-machine numbers are computed here by summing this shift's Production
-# Report events directly -- same approach as overview_dashboard/cdf_service.py's
-# load_overview(), just narrowed to Línea 1's D&I machines (DI_MACHINE_CODES).
+# --- Per-machine shift totals (D&I, ISPRAY) -------------------------------
+# hourly_production_report only writes LINE-level rollups (e.g.
+# LINE1_DI_PRODUCTION_SHIFT), not one per physical machine, so per-machine
+# numbers are computed here by summing this shift's Production Report events
+# directly -- same approach as overview_dashboard/cdf_service.py's
+# load_overview(), just narrowed to the machine codes passed in.
 _PRODUCTION_KEYS = ["hourly_production", "golpes_bobina_hora"]
 _SCRAP_KEYS = ["short_cans_per_hour", "trimmer_jams_per_hour", "hourly_retrac", "blow_off"]
 
@@ -73,7 +73,7 @@ def _meta_sum(meta: dict, keys: list) -> float:
     return total
 
 
-async def _di_machine_shift_totals(code: str, date_str: str, shift_code: str) -> tuple[float, float]:
+async def _machine_shift_totals(code: str, date_str: str, shift_code: str) -> tuple[float, float]:
     prefix = f"report_{code.lower()}_{date_str}_{shift_code}"
     events = await client.events.list(type="Production Report", external_id_prefix=prefix, limit=100)
     if not events:
@@ -84,12 +84,11 @@ async def _di_machine_shift_totals(code: str, date_str: str, shift_code: str) ->
     return production, scrap
 
 
-async def load_di_machine_values() -> dict:
-    """{machine_code: {"production": float, "scrap": float}} for every
-    Línea 1 D&I machine, summed over this shift's Production Report events
-    so far."""
+async def load_machine_values(codes: list) -> dict:
+    """{machine_code: {"production": float, "scrap": float}} for each code
+    (e.g. config.DI_MACHINE_CODES, config.ISPRAY_MACHINE_CODES), summed over
+    this shift's Production Report events so far. Scrap is always 0 for
+    ISPRAY, whose events carry no scrap fields."""
     date_str, shift_code = current_shift_key()
-    results = await asyncio.gather(
-        *(_di_machine_shift_totals(code, date_str, shift_code) for code in DI_MACHINE_CODES)
-    )
-    return {code: {"production": prod, "scrap": scrap} for code, (prod, scrap) in zip(DI_MACHINE_CODES, results)}
+    results = await asyncio.gather(*(_machine_shift_totals(code, date_str, shift_code) for code in codes))
+    return {code: {"production": prod, "scrap": scrap} for code, (prod, scrap) in zip(codes, results)}
