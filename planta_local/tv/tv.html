@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planta - Vista TV</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #ffffff; overflow: hidden; }
+  iframe {
+    position: absolute; top: 0; border: 0; transform-origin: top left;
+    opacity: 0; transition: opacity 0.8s ease; background: #ffffff;
+  }
+  iframe.visible { opacity: 1; }
+  #stage { position: absolute; top: 0; overflow: hidden; }
+  #dots { position: fixed; right: 18px; bottom: 14px; display: flex; gap: 8px; z-index: 2; }
+  #dots span { width: 10px; height: 10px; border-radius: 50%; background: rgba(0,0,0,0.15); }
+  #dots span.on { background: rgba(0,0,0,0.55); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="dots"></div>
+<script>
+// Rotates full-screen between the plant views served by planta_server.py.
+//   tv.html?s=30            seconds per view (default 30)
+//   tv.html?ports=8501,8502 which local apps to rotate through (default: Línea 1, Línea 3)
+//   tv.html?vw=1600&vh=1180 virtual page size each view is rendered at before being scaled to
+//                           fit the screen (the plant views are taller than a 16:9 TV)
+// The hidden view is reloaded right after it's hidden, so it has a whole period to fetch fresh
+// data and render before it's shown again -- the TV never shows a loading page.
+const q = new URLSearchParams(location.search);
+const seconds = Math.max(5, Number(q.get("s")) || 30);
+const ports = (q.get("ports") || "8501,8502").split(",").map(p => p.trim()).filter(Boolean);
+const host = location.hostname || "localhost";
+const VW = Number(q.get("vw")) || 1600, VH = Number(q.get("vh")) || 1180;
+const urlFor = port => `${location.protocol}//${host}:${port}/?embed=true&t=${Date.now()}`;
+
+const frames = ports.map(port => {
+  const f = document.createElement("iframe");
+  f.src = urlFor(port);
+  f.setAttribute("scrolling", "no");
+  document.getElementById("stage").appendChild(f);
+  return f;
+});
+const dots = ports.map(() => document.getElementById("dots").appendChild(document.createElement("span")));
+
+// Each view renders at VW x VH and is scaled to fit; the stage clips it to that box. Frames are
+// rendered a little wider than VW so their right edge (a 1px line in some browsers) is clipped away.
+function fit() {
+  const scale = Math.min(innerWidth / VW, innerHeight / VH);
+  const stage = document.getElementById("stage");
+  stage.style.width = Math.floor(VW * scale) + "px"; stage.style.height = Math.floor(VH * scale) + "px";
+  stage.style.left = Math.max(0, (innerWidth - VW * scale) / 2) + "px";
+  frames.forEach(f => {
+    f.style.left = "0px";
+    f.style.width = (VW + 24) + "px"; f.style.height = (VH + 24) + "px";
+    f.style.transform = `scale(${scale})`;
+  });
+}
+fit();
+addEventListener("resize", fit);
+
+let current = 0;
+function show(i) {
+  frames.forEach((f, k) => f.classList.toggle("visible", k === i));
+  dots.forEach((d, k) => d.classList.toggle("on", k === i));
+}
+show(0);
+if (frames.length > 1) {
+  setInterval(() => {
+    const previous = current;
+    current = (current + 1) % frames.length;
+    show(current);
+    setTimeout(() => { frames[previous].src = urlFor(ports[previous]); }, 1000);   // refresh after fade-out
+  }, seconds * 1000);
+} else {
+  setInterval(() => { frames[0].src = urlFor(ports[0]); }, seconds * 1000);
+}
+</script>
+</body>
+</html>

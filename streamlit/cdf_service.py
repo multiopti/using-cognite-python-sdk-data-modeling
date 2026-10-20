@@ -1,14 +1,15 @@
 from datetime import timedelta
 import pandas as pd
 import streamlit as st
-from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes import EventUpdate, EventWrite
 
+from cdf_auth import get_async_client
 from config import SHIFT_MAP
 
 @st.cache_resource
 def get_cognite_client():
-    return AsyncCogniteClient()
+    # Zero-arg client inside Fusion, .env credentials elsewhere (e.g. the plant's local server).
+    return get_async_client()
 
 client = get_cognite_client()
 

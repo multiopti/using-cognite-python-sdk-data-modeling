@@ -1,0 +1,9 @@
+# Plant-floor server (planta_local/). Pinned to the versions it was tested with on 2026-10-19,
+# so a reinstall on the plant server behaves exactly like the tested setup.
+streamlit==1.62.0
+streamlit-autorefresh==1.0.1
+cognite-sdk[pandas]==8.13.0
+pandas==2.3.3
+numpy>=1.26
+plotly==6.9.0
+python-dotenv==1.2.3

@@ -4,6 +4,7 @@ import streamlit as st
 st.set_page_config(page_title="Reporte de Producción", layout="wide")
 
 import asyncio
+import os
 from datetime import date, timedelta
 import pandas as pd
 from cognite.client.data_classes.capabilities import EventsAcl
@@ -101,6 +102,12 @@ async def user_can_edit_reports(client) -> bool:
     (red, permisos, forma de respuesta inesperada) se asume que NO puede
     editar (False), por seguridad.
     """
+    # Plant's local server (planta_local/): every operator PC shares one service account, so
+    # editing would be anonymous -- the server sets PLANT_READ_ONLY to show the report read-only.
+    # Never set inside Fusion, where each user signs in with their own CDF identity.
+    if os.environ.get("PLANT_READ_ONLY", "").lower() in ("1", "true", "yes"):
+        return False
+
     try:
         inspection = await client.iam.token.inspect()
 
