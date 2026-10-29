@@ -57,12 +57,59 @@ Pending work tracked across sessions. Update as items are picked up/finished.
 ## Local dev tooling
 
 - [ ] **Local testing for the CDF-hosted Streamlit app** (plan saved at
-  `C:\Users\sanch\.claude\plans\synchronous-snuggling-knuth.md`, not started):
-  swap `streamlit/cdf_service.py`'s bare `AsyncCogniteClient()` for
-  `cdf_auth.get_async_client()` (safe no-op change once deployed in Fusion),
-  then scaffold `@stlite/desktop` in `streamlit/` so `main.py` can be
-  previewed locally without modification and without a Fusion upload for
-  every small change.
+  `C:\Users\sanch\.claude\plans\synchronous-snuggling-knuth.md`): the
+  `cdf_service.py` swap to `cdf_auth.get_async_client()` is **done**
+  (2026-10-19, commit `de887a7`), and `planta_local/run_app.py` already runs
+  `main.py` unmodified on a local Streamlit server -- which covers most of
+  the original need. Remaining (optional): scaffold `@stlite/desktop` if a
+  preview that matches Fusion's Pyodide runtime exactly is still wanted.
+  **The updated `streamlit/cdf_service.py` and `main.py` still need to be
+  pasted into the Reporte de Producción app in Fusion and republished** (no
+  behaviour change there, but keeps Fusion and the repo in sync).
+
+## Plant-floor server (planta_local/) -- built + tested locally 2026-10-19
+
+Serves Línea 1 / Línea 3 plant views and the read-only Reporte de Producción
+on the plant LAN (TV rotation on :8500, apps on :8501-8503), without a Fusion
+login. Code committed in `de887a7`; see `planta_local/README.md`.
+
+- [ ] **Install on the plant's Windows server** with
+  `planta_local\install_service.ps1` (as Administrator). Need from the plant
+  first:
+  - whether the server has internet access to
+    `aw-was-gp-001.cognitedata.com` and the identity provider, or needs a
+    proxy (configure it for the SYSTEM account, which runs the task);
+  - whether the TV gets a mini-PC (recommended: Edge in `--kiosk` mode) or is
+    a Smart TV with its own browser (iframe support is hit-and-miss);
+  - whether the `.env` service account can be **read-only** (time series +
+    events), since every operator shares it.
+- [ ] After installing: verify all four URLs from another PC on the plant
+  network, and that the scheduled task restarts the server after a reboot.
+- [ ] Stop the local test server on this PC (ports 8500-8503) once it's no
+  longer needed for demos.
+
+## Plant telemetry
+
+- [x] **`tr_raw_to_datapoints_superenvases` (id 404926) stopped writing on
+  2026-10-28 16:01** after the plant network repair: the edge started
+  publishing 3 new tags (`PRINTER_L1/L31/L32_LAT_SOP_ACT_MAN`) with no time
+  series, so every job failed with "Time series not found" and CDF blocked
+  the schedule. Fixed same day: created the 3 `..._DISP` time series
+  (mirroring their sibling PRINTER series' data set/asset/description) and
+  changed the query to `JOIN _cdf.timeseries`, so an unknown tag is skipped
+  instead of failing the job. New tags still need their time series created
+  by hand -- RAW data is backfilled automatically once it exists.
+- [ ] **Make that transformation incremental** (`is_new()` on the RAW
+  table). It re-reads the whole `raw_mqtt_messages` table every 5 min; runs
+  now take >5 min, so ~half of all runs since 2026-10-27 failed with "A job
+  already runs for this transform". Changes how backfill works (only new
+  RAW rows get processed), so agree on it with the user before doing it.
+
+- [ ] **Machines have been sending only error values since 2026-10-16**, so
+  every app shows 0 production. The edge heartbeat is still arriving
+  (last seen 2026-10-19 20:42), so the edge device is alive and the problem
+  is the PLC/tag reads on the plant side -- needs someone on site to check
+  the PLC connection in the edge/OPC configuration.
 
 ## Grafana / Fusion Charts
 
@@ -145,3 +192,19 @@ Pending work tracked across sessions. Update as items are picked up/finished.
   (FECHA,TURNO,MÁQUINA) row groups were flagged but left untouched since
   they predate this work and their cause is unconfirmed).
 - [ ] Trend analysis over the historical short-can/trimmer-jam data.
+
+## Dev PC housekeeping (C: drive)
+
+C: went down to 0.28 GB free on 2026-10-19; now ~11 GB after clearing caches,
+old GitHub Desktop/Playwright versions and uninstalling WSL + the Dev
+Containers VS Code extension. Rockwell data under `C:\Users\Public\Documents`
+and `C:\Program Files (x86)\Rockwell Software` must stay on C:.
+
+- [ ] Run Windows' own cleanup as Administrator (`cleanmgr` → "Limpiar
+  archivos del sistema" → Windows Update cleanup, or
+  `Dism /Online /Cleanup-Image /StartComponentCleanup`) -- likely 2-5 GB.
+- [ ] Clear Chrome's cached images/files (~0.6 GB) from Chrome settings.
+- [ ] Decide whether SQL Server (1.1 GB), OpenSSL (0.8 GB) and Postman
+  (0.5 GB) are still needed; uninstall the ones that aren't.
+- [ ] Optional: turn off the leftover "Subsistema de Windows para Linux" /
+  "Plataforma de máquina virtual" Windows features (needs admin + reboot).
