@@ -32,6 +32,7 @@ dist/
 *.log
 
 data/Short Can - D&I y STD.xlsx
+data_exports/raw_backup/
 
 # Plant-floor server (planta_local/)
 planta_local/logs/

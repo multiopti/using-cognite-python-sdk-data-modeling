@@ -104,6 +104,27 @@ login. Code committed in `de887a7`; see `planta_local/README.md`.
   now take >5 min, so ~half of all runs since 2026-10-27 failed with "A job
   already runs for this transform". Changes how backfill works (only new
   RAW rows get processed), so agree on it with the user before doing it.
+  Stopgap applied 2026-10-29: schedule changed `*/5` -> `*/10 * * * *`
+  (runs took 237-561 s), which stops the overlap failures but not the
+  growth -- runs will keep getting longer as the RAW table grows.
+  Set back to `*/5` the same day at the user's request (after the partial
+  RAW cleanup below) -- check job durations stay under 5 min.
+- [x] **RAW cleanup of `raw_mqtt_messages` finished 2026-10-31** (second
+  pass deleted the remaining 179,010 keys, resolved from CDF and
+  intersected with the backup). Table now ~83k rows, oldest 2026-10-22
+  08:49; transformation runs dropped to 16-42 s. It grows ~9k rows/day, so
+  either repeat this cleanup every few months or do the `is_new()` change
+  above. Original notes:
+- **RAW cleanup of `raw_mqtt_messages` paused halfway (2026-10-29).**
+  Full backup verified (603,733 rows, 22.5 MB):
+  `data_exports/raw_backup/db_superenvases_raw.raw_mqtt_messages_20261029_0839.jsonl.gz`
+  (git-ignored). User confirmed deleting the 538,010 rows with
+  last_updated_time before 2026-10-22 08:49 (-04), keeping the last 7 days;
+  all 137 tags in them already had time series, so nothing is lost from
+  CDF. Stopped at ~350,000 deleted (user had to leave). To resume: rerun
+  the same delete-by-key-from-backup approach for those 538,010 keys
+  (re-deleting already-gone keys is harmless), then count the remaining
+  rows and check the next transformation run's duration.
 
 - [ ] **Machines have been sending only error values since 2026-10-16**, so
   every app shows 0 production. The edge heartbeat is still arriving
