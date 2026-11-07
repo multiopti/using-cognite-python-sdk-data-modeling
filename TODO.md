@@ -113,8 +113,9 @@ login. Code committed in `de887a7`; see `planta_local/README.md`.
   pass deleted the remaining 179,010 keys, resolved from CDF and
   intersected with the backup). Table now ~83k rows, oldest 2026-10-22
   08:49; transformation runs dropped to 16-42 s. It grows ~9k rows/day, so
-  either repeat this cleanup every few months or do the `is_new()` change
-  above. Original notes:
+  either repeat this cleanup every few months (`utils/backup_raw.py`, then
+  `utils/delete_old_raw.py`) or do the `is_new()` change above. Original
+  notes:
 - **RAW cleanup of `raw_mqtt_messages` paused halfway (2026-10-29).**
   Full backup verified (603,733 rows, 22.5 MB):
   `data_exports/raw_backup/db_superenvases_raw.raw_mqtt_messages_20261029_0839.jsonl.gz`
