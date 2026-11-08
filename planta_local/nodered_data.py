@@ -20,6 +20,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -48,12 +49,15 @@ def _key(ts_name):
 
 MACHINES = {}
 for _cfg in HR.MACHINE_CONFIGS:
+    _keys = {name[3:]: _key(ts) for name, ts in _cfg.items() if name.startswith("ts_")}
     MACHINES[_cfg["code"].lower()] = {
         "code": _cfg["code"].lower(),
         "type": _cfg["machine_type"].upper(),
         "line": _cfg["line"],
         "capacity": float(_cfg.get("nominal_capacity") or 0.0),
-        "keys": {name[3:]: _key(ts) for name, ts in _cfg.items() if name.startswith("ts_")},
+        "keys": _keys,
+        # hourly incident matrix (Optix Model/OBSERVACIONES/<base>_OBS_DATA_WEEK): DI11_OBS, MINSTER_L1_OBS, ...
+        "obs_machine": _keys.get("prod") or _cfg["code"].upper(),
     }
 # counters that do NOT restart with the shift (strokes per coil): their first hour is measured against the
 # previous hour, even across the shift change
@@ -91,6 +95,36 @@ def data_week():
         if _cache["week"] is None:
             raise RuntimeError(f"No se pudo leer el servidor Node-RED ({NODERED_URL}/api/data_week): {_cache['error']}")
         return _cache["week"]
+
+
+def invalidate():
+    """Forget the cached read, so the next call reads Node-RED again (e.g. right after saving an incident)."""
+    with _lock:
+        _cache["read_at"] = 0.0
+
+
+def save_incident(code_machine, shift_date, shift_code, slot, incident_code):
+    """Store an hour's incident code in Optix through Node-RED (POST /api/observacion). incident_code -1 clears it.
+    Raises RuntimeError with Node-RED's explanation when it is refused."""
+    machine = MACHINES[code_machine.lower()]["obs_machine"]
+    d = shift_hours(shift_date, shift_code)[0].date()
+    body = json.dumps({"machine": machine, "date": d.strftime("%Y-%m-%d"), "shift": shift_code,
+                       "slot": int(slot), "code": int(incident_code)}).encode("utf-8")
+    req = urllib.request.Request(NODERED_URL + "/api/observacion", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            answer = json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            answer = json.loads(e.read() or b"{}")
+        except ValueError:
+            answer = {"error": f"HTTP {e.code}"}
+    except Exception as e:
+        raise RuntimeError(f"no se pudo contactar a Node-RED ({NODERED_URL}): {e}")
+    if not answer.get("ok"):
+        raise RuntimeError(answer.get("error") or "Node-RED rechazó la incidencia")
+    return answer
 
 
 def status():
@@ -236,15 +270,17 @@ def shift_report(code, shift_date, shift_code, now=None):
     per_counter = {name: hourly(week.get(key), hours, continuous=name in CONTINUOUS, now=now)
                    for name, key in machine["keys"].items()}
     main = "golpes_bob" if machine["type"] == "MINSTER" else "prod"
+    obs_series = week.get(machine["obs_machine"] + "_OBS")
     out = []
     for i, h in enumerate(hours):
         state = per_counter[main][i]
         if state == "pending":
             out.append({"slot": i + 1, "hour_start": h, "status": "pending"})
             continue
+        incident = _value(obs_series, h) if _available(h, now) else None   # code chosen by an operator, or None
         counts = {name: (vals[i] if isinstance(vals[i], (int, float)) else 0.0) for name, vals in per_counter.items()}
         rep = hour_report(machine, counts)
-        rep.update(slot=i + 1, hour_start=h, status="ok" if state is not None else "no_data")
+        rep.update(slot=i + 1, hour_start=h, status="ok" if state is not None else "no_data", incident=incident)
         if state is None:
             rep["obs"] = "Sin datos (Optix apagado o error de comunicación con el PLC)"
         out.append(rep)

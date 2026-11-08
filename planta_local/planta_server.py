@@ -34,7 +34,7 @@ APPS = [
     # (app folder, port, read_only)
     ("linea1_plant_view", 8501, True),
     ("linea3_plant_view", 8502, True),
-    ("streamlit", 8503, True),            # Reporte de Producción
+    ("streamlit", 8503, False),           # Reporte de Producción: operators can set each hour's incident
 ]
 
 
@@ -46,8 +46,12 @@ def log(msg):
 
 
 def start_app(folder, port, read_only):
+    source = os.environ.get("PLANT_DATA_SOURCE", DATA_SOURCE)
+    # Editing only with Node-RED (incidents are stored in Optix). Against CDF every operator would edit anonymously
+    # through the shared service account, so the Reporte stays read-only there.
+    read_only = read_only or source == "cdf"
     env = dict(os.environ, PLANT_REFRESH_S=str(REFRESH_S), PLANT_READ_ONLY="1" if read_only else "0",
-               PLANT_DATA_SOURCE=os.environ.get("PLANT_DATA_SOURCE", DATA_SOURCE),
+               PLANT_DATA_SOURCE=source,
                PLANT_NODERED_URL=os.environ.get("PLANT_NODERED_URL", NODERED_URL), PYTHONUTF8="1")
     cmd = [sys.executable, "-m", "streamlit", "run", str(HERE / "run_app.py"),
            "--server.port", str(port), "--server.address", "0.0.0.0", "--server.headless", "true",

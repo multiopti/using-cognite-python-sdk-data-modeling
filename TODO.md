@@ -120,6 +120,25 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - 12-hour data matches the synthetic data;
     - all 3 apps run via `run_app.py` with no exceptions.
   - Still to check: view it in a browser (`planta_server.py`).
+- [x] **Editable hourly incidents: built and tested in the simulation (2026-11-08).**
+  - Optix: `add_obs_matrices.py` adds the `OBSERVACIONES` folder (32 matrices, initial -1, retentive) and the TimeUpdater weekly wipe only.
+  - Anonymous OPC UA write accepted, single-cell writes OK.
+  - Node-RED: `node-red/add_observaciones_flow.py`, OBSERVACIONES tab with `POST /api/observacion`.
+  - Streamlit:
+    - the local reporte service shows and saves incidents;
+    - `planta_server` makes the Reporte editable (read-only only in "cdf" mode).
+  - Tested end to end: validation, one-cell write, the Reporte shows and saves, unfinished hour refused, cleanup.
+- [ ] Incidents in the **plant project**: run `add_obs_matrices.py --project <plant>` (after a fresh backup) and add it to the plant visit checklist (deploy together with the D&I/Minster matrices).
+- [x] Wording: the save messages in `streamlit/main.py` no longer mention CDF ("Guardando observaciones ...", "¡N registro(s) actualizados correctamente! 🎉", "Error al guardar los cambios: ...", "Error consultando datos para <máquina>: ..."). Applies to the plant's local server; the Fusion app only changes if it is redeployed by hand.
+- [ ] (design notes) **Editable hourly incidents ("Observaciones") in the plant's Reporte de Producción** (client request, 2026-11-08). Agreed design:
+  - Storage: one `Int32[7,24]` `<machine>_OBS_DATA_WEEK` matrix per machine in Optix (32), holding incident codes = index in `INCIDENTES_OPCIONES`. -1 = none. The list is append-only.
+  - Rotation: only the weekly day-wipe clears them; NOT TimeUpdater's gap fill (it would erase incidents entered after a power cut); retentive.
+  - Write path: Reporte -> Node-RED `POST /api/observacion` -> OPC UA write of one cell.
+  - Read: `/api/data_week`.
+  - Anyone with access to the page can edit, for now.
+  - Same process as the D&I/Minster matrices: simulation first, then the plant project.
+- [ ] Later: plant incidents are NOT synced to CDF (the Fusion app keeps its own observations in CDF events). Decide whether/how to sync them.
+- [ ] Skipped: the Excel report's "Observaciones" column stays manual (operators fill it themselves).
 - [ ] (old plan, superseded by the above) Local Streamlit server (`planta_local/`):
   - a collector reading `/api/data_week` (or the Optix OPC UA directly), with history in SQLite;
   - a local `cdf_service.py` per app, with `main.py` unchanged.
@@ -179,7 +198,7 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
 - [ ] Possible later: "Guardar datos" files could include the date, shift and machine in their names (today each page overwrites one file).
 - [x] PRINTER and ISPRAY pages no longer share `turno`/`days_ago` (`node-red/separate_page_globals.py`). They now use `printer_turno`/`printer_days_ago` and `ispray_turno`/`ispray_days_ago`, so all 5 pages are independent. Tested; deployed in the local Node-RED.
 - [x] **One OPC UA client per tab** (`node-red/restructure_opcua_clients.py`): 87 sessions -> 13.
-  - Why: the Optix OPC UA server allows about 100 sessions (it refused the 101st with BadTooManySessions). A killed Node-RED leaves its sessions open until they time out, so with 87 clients a single restart overflowed the server.
+  - Why: the Optix OPC UA server refused new sessions (BadTooManySessions). Correction 2026-11-08: the configured limit is `MaxSessionCount` 100, but the **emulator** refuses at about 16 live sessions, probably because of the demo licence. The plant's July flow ran with 28. Confirm the plant's real limit on the next visit; the plant flow now uses 15 (14 tabs + the incident write client). Sessions not closed cleanly can live up to 1 hour (`MaxSessionTimeout`). A killed Node-RED leaves its sessions open until they time out, so with 87 clients a single restart overflowed the server.
   - Each tab's function maps NodeId -> key; the keys are unchanged.
   - Verified with `node-red/verify_flow.py` against both Optix projects, and live: 13 connections, 87 keys, values correct.
 - [ ] Plant project: apply with `add_di_minster_matrices.py --project <copy of plant project> --mode plant`, then deploy to the Edge module. Decide with the client first.

@@ -9,7 +9,7 @@ sesión en Fusion.
 | Rotación Línea 1 / Línea 3 | `http://<servidor>:8500/tv.html` | Televisor de planta |
 | Línea 1 - Vista de Planta | `http://<servidor>:8501` | Cualquiera |
 | Línea 3 - Vista de Planta | `http://<servidor>:8502` | Cualquiera |
-| Reporte de Producción | `http://<servidor>:8503` | PCs de los operadores (solo lectura) |
+| Reporte de Producción | `http://<servidor>:8503` | PCs de los operadores (incidencias editables) |
 
 Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtros que eligió
 (fecha, máquina, turno).
@@ -32,7 +32,12 @@ Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtr
 - **Datos por hora.** Los datos llegan por hora, igual que en Fusion: cada hora aparece cuando termina (minuto 59).
 - **Producción durante un corte.** Lo producido durante un corte de datos se suma a la primera hora con datos después del corte, así el total del turno queda completo.
 - **Estado de la conexión.** Al pie del Reporte se ve la hora de la última lectura de Node-RED, en rojo si tiene más de 15 minutos o si la última lectura falló.
-- **Solo lectura.** Los operadores no inician sesión, por eso el Reporte de Producción se publica **en solo lectura**: no permite editar observaciones.
+- **Incidencias por hora.** En el Reporte de Producción cualquiera con acceso a la página puede elegir la **incidencia** de cada hora (columna "Observaciones / Incidencias") y guardarla.
+  - **Dónde se guarda:** en FT Optix, en una matriz semanal por máquina (`Model/OBSERVACIONES`), a través de Node-RED (`POST /api/observacion`). Se conserva la última semana, como el resto de los datos.
+  - **Qué se puede elegir:** solo las opciones de la lista `INCIDENTES_OPCIONES`, y solo para horas que ya terminaron.
+  - **Horas sin incidencia:** muestran el texto automático ("Operación normal", "Parada por latas cortas"...).
+  - **La lista de incidencias:** en `streamlit\config.py`. **Solo se agregan opciones al final**, porque Optix guarda la posición en la lista.
+  - **Sin login:** no hay usuarios. Para volver a solo lectura, pon `True` en la fila del Reporte de `APPS` en `planta_server.py`. Con `DATA_SOURCE = "cdf"` el Reporte queda siempre en solo lectura.
 - **Volver a CDF.** Para usar CDF en vez de Node-RED: `DATA_SOURCE = "cdf"` en `planta_server.py`. Necesita `cognite-sdk\.env` y salida a internet.
 
 ## Requisitos del servidor

@@ -185,7 +185,7 @@ try:
         turno_label=active_turno
     )
 except Exception as e:
-    st.error(f"Error consultando eventos de CDF para {active_machine_label}: {e}")
+    st.error(f"Error consultando datos para {active_machine_label}: {e}")
 
 # ---------------------------------------------------------
 # 7. Merge Timeline with Event Data
@@ -317,7 +317,7 @@ if user_can_edit:
     with btn_save_col1:
         if st.button("Guardar Cambios 💾", use_container_width=True):
             try:
-                with st.spinner("Guardando observaciones en Cognite Data Fusion..."):
+                with st.spinner("Guardando observaciones ..."):
                     total_mod = await save_observations_to_cdf(
                         machine_code=active_machine_code,
                         fecha_str=active_fecha,
@@ -326,11 +326,11 @@ if user_can_edit:
                         filtered_df=filtered_df
                     )
                 if total_mod > 0:
-                    st.success(f"¡{total_mod} registro(s) actualizados correctamente en CDF! 🎉")
+                    st.success(f"¡{total_mod} registro(s) actualizados correctamente! 🎉")
                 else:
                     st.info("No se detectaron cambios pendientes por guardar.")
             except Exception as e:
-                st.error(f"Error al guardar los cambios en CDF: {e}")
+                st.error(f"Error al guardar los cambios: {e}")
 else:
     # --- READ-ONLY USER: Hide Button & Display Notice ---
     with btn_save_col1:
