@@ -88,6 +88,118 @@ login. Code committed in `de887a7`; see `planta_local/README.md`.
 - [ ] Stop the local test server on this PC (ports 8500-8503) once it's no
   longer needed for demos.
 
+## Plant-floor data WITHOUT CDF: Node-RED / Optix (started 2026-11-07)
+
+Client decision: the plant-floor Streamlit server must read local plant data, not CDF.
+Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
+- The Optix project (NodeId source of truth) is
+  `C:\Users\sanch\Documents\Rockwell Automation\FactoryTalk Optix\Projects\Superenvases`.
+- Optix OPC UA endpoint: `opc.tcp://10.86.193.3:59100`.
+- Shifts are 06:00–18:00 / 18:00–06:00, the same as the PLC counter resets and CDF.
+
+- [x] **`flows_planta.json`: plant Node-RED flow, ready to import**, built from the July plant flow. It has:
+  - 6–6 shifts and the fixed hourly logic (`-1`/`-1001` shown as N/A, correct hour after a gap and first hour of the shift);
+  - Printer ACUM read every 5 min, and the new IP;
+  - the ISPRAY L3_31 NodeId fixed (it was reading L3_32);
+  - Standum (prod, short cans, trimmer jams) and ISPRAY ACUM tabs;
+  - 65 matrices, every NodeId verified against the Optix project;
+  - `GET /get-printer-data` (Excel macro, tested) and `GET /api/data_week` (for the local Streamlit server).
+- [ ] Deploy `flows_planta.json` in the plant: import replacing the current flow, Deploy, reselect the shift in each dashboard. Then check that the OPC UA nodes show connected.
+- [x] `Reporte_macro_http_6-6.xlsm`: report workbook with 6–6 hour labels on all 4 sheets and J2 = `6AM-6PM`. Not yet opened in Excel to confirm, because Excel COM is broken on this PC.
+- [ ] Excel macro fixes:
+  - URL `localhost` -> the Node-RED PC's IP (put it in a cell);
+  - send the date as `Format(G2, "yyyy-mm-dd")` (it currently depends on Windows' locale);
+  - read the parameters from PRINTERS, not the active sheet;
+  - add a dropdown on J2 (`6AM-6PM` / `6PM-6AM`).
+- [ ] D&I and Minster have NO weekly matrices in the Optix (only live tags). Either the Optix `TimeUpdater` adds them, or the local server records the live values itself.
+- [x] **Local Streamlit server reads Node-RED, not CDF** (2026-11-08):
+  - `planta_local/nodered_data.py`, `local_services/{plant_view,reporte}/cdf_service.py`, and `run_app.py` with `PLANT_DATA_SOURCE` (nodered by default, cdf optional).
+  - Only the last week, straight from `/api/data_week` (no SQLite); hourly; read-only observations; Node-RED status line.
+  - Tested:
+    - report fields identical to the CDF function (11 cases, all 5 types);
+    - 12-hour data matches the synthetic data;
+    - all 3 apps run via `run_app.py` with no exceptions.
+  - Still to check: view it in a browser (`planta_server.py`).
+- [ ] (old plan, superseded by the above) Local Streamlit server (`planta_local/`):
+  - a collector reading `/api/data_week` (or the Optix OPC UA directly), with history in SQLite;
+  - a local `cdf_service.py` per app, with `main.py` unchanged.
+  - Still to confirm with the client: whether reading the Optix OPC UA directly is acceptable.
+
+## plant_simulation: Optix copy fed by CDF history (2026-11-08)
+
+`E:\source\repos\streamlit\plant_simulation\` is a copy of the plant Optix project with no PLC and no cloud access. See `replay_data/README.md`.
+
+- [x] Copy made: no `.git`, no certificates/keys, Data Mosaix secret blanked.
+- [x] Simulation wiring:
+  - 213 model variables no longer read the PLC;
+  - TimeUpdater reads the model instead of PLC tags;
+  - `CdfReplay` NetLogic: history shifted by whole weeks, plus a 7-day prefill of the 65 matrices.
+- [x] The NetSolution builds with `dotnet build` (0 errors) against FT Optix Studio 1.6.2.36.
+- [x] 21 days of history exported (139 tags, about 2M points).
+- [ ] Open in FT Optix Studio, run the emulator and check the `CdfReplay` Status and logs. Not run yet.
+- [x] Cloud publishers removed (`remove_cloud.py`):
+  - the MQTT client, `Model/PushDataMosaix` and the Data Mosaix store;
+  - the Data Mosaix connector's code, DLLs, NuGet packages and `config.yml`.
+  - Clean build: 0 errors, 0 warnings.
+- [x] Runtime checked (2026-11-08):
+  - CdfReplay loaded the history and prefilled 65 matrices;
+  - 6 tags read over OPC UA match the history;
+  - the only errors were the absent PLC.
+- [x] EtherNet/IP driver unloaded and `*_ANT` links cut (`disable_plc.py`). Nothing links to the PLC now.
+- [x] CdfReplay `Mode`:
+  - Synthetic (default): clean production from `rates.csv`, for testing;
+  - Replay: real history, with `-1` after `StaleMinutes` without data.
+  - Builds with 0 errors and 0 warnings.
+  - Verified in the emulator (2026-11-08 11:17), Synthetic mode:
+    - 0 errors in the log;
+    - 8 tags over OPC UA match the formula;
+    - 3 matrices: 167/167 hours match the formula.
+  - Studio needed `Superenvases.optix.design` set to `Nodes: []` once the TagImporter was gone.
+- [x] **D&I and Minster weekly matrices** added to plant_simulation (`add_di_minster_matrices.py`):
+  - 22 matrices (D&I prod/short cans/trim × 6, Minster strokes per shift and per coil × 2);
+  - TimeUpdater now fills 87; Minster folders made retentive; CdfReplay pre-fills all 87;
+  - deterministic NodeIds; verified (paths, lists, unique ids) and builds with 0 errors.
+- [x] Emulator run:
+  - 87 matrices pre-filled.
+  - TimeUpdater wrote the 15:00 slot at 15:59 (2026-11-08) in old and new (D&I, Minster) matrices: 10/10 match the synthetic values, read via Node-RED.
+- [ ] Note: a killed Node-RED leaves its OPC UA sessions open until they time out, so the server can refuse new clients (BadTooManySessions) even with only 13 live. Stop Node-RED cleanly in the plant.
+- [x] Node-RED (`flows_planta.json`): D&I PROD / D&I LATAS CORTAS / D&I TRANC TRIM / MINSTER tabs (keys `DInn`, `DInn_LATAS_CORTAS`, `DInn_TRANC_TRIM`, `MINSTER_Lx_GOLPES_TURNO|BOB`). 87 matrices, NodeIds verified against plant_simulation. Tested via the local Node-RED: `/api/data_week` returns 87 keys, and the 22 new ones match 167/167 hours.
+  - The plant's Optix needs `add_di_minster_matrices.py --mode plant` first, or those 4 tabs will fail to read.
+- [x] **Dashboard pages for STANDUM, D&I and MINSTER** (`node-red/add_dashboard_pages.py`, cloned from the ISPRAY page):
+  - pages /page3, /page4, /page5;
+  - each page has its own globals (`<prefix>_select/_turno/_days_ago`) and its own export (`data_<prefix>.xlsx`);
+  - Minster shows strokes per hour plus the raw coil counter.
+  - Tested: tables match the synthetic data for both shifts; the Excel function handles N columns; the local Node-RED serves all 5 pages.
+- [x] **Calendar instead of "Dia anterior"** on all 5 pages (`node-red/date_picker_pages.py`):
+  - `ui-text-input` in date mode;
+  - "Validar fecha" accepts yesterday to 6 days ago, otherwise shows a red notification with the allowed range and resets the calendar;
+  - global `<page>_date`; the calendar starts on yesterday;
+  - tables show N/A for hours not finished yet.
+  - Tested (validation, default date, N/A at 03:30, regressions); deployed in the local Node-RED. Still to check in a browser.
+- [ ] Possible later: "Guardar datos" files could include the date, shift and machine in their names (today each page overwrites one file).
+- [x] PRINTER and ISPRAY pages no longer share `turno`/`days_ago` (`node-red/separate_page_globals.py`). They now use `printer_turno`/`printer_days_ago` and `ispray_turno`/`ispray_days_ago`, so all 5 pages are independent. Tested; deployed in the local Node-RED.
+- [x] **One OPC UA client per tab** (`node-red/restructure_opcua_clients.py`): 87 sessions -> 13.
+  - Why: the Optix OPC UA server allows about 100 sessions (it refused the 101st with BadTooManySessions). A killed Node-RED leaves its sessions open until they time out, so with 87 clients a single restart overflowed the server.
+  - Each tab's function maps NodeId -> key; the keys are unchanged.
+  - Verified with `node-red/verify_flow.py` against both Optix projects, and live: 13 connections, 87 keys, values correct.
+- [ ] Plant project: apply with `add_di_minster_matrices.py --project <copy of plant project> --mode plant`, then deploy to the Edge module. Decide with the client first.
+  - **Plan agreed 2026-11-08.** Dry run on a copy: 7 files, additions only (5 model folders + Retentivity + TimeUpdater). The new matrices start at -1 (fix a).
+  - [x] Step 1: full backup of the plant project at `C:\Users\sanch\Documents\Rockwell Automation\FactoryTalk Optix\Projects_backup\Superenvases_20261108_1444` (3,250 files, verified by hash).
+  - [x] Step 2: initial value -1 (`{"Type":6,"Dimensions":[7,24],"Body":[...]}`) is in the script. Confirmed in the emulator on 2026-11-08 15:20: a test matrix read Int32 [7,24] with 168 × -1, status Good. The test matrix was removed afterwards.
+  - Studio's build can exceed its timeout and still report "built successfully" with no `bin\Superenvases.dll`. Before any deploy, check that the DLL exists; after the deploy, check the log for "Unable to find the .NET assembly". In the plant that would stop TimeUpdater **and** the push to CDF.
+  - [x] Step 3 (2026-11-08): **applied to the real plant project**.
+    - Exactly 7 files changed, additions only, byte-identical to the reviewed dry run.
+    - TimeUpdater: 87 calls; every source exists, including the 12 D&I PLC tags.
+    - 22 matrices start at -1; Minster folders retentive; no duplicate ids.
+    - C# compiles (checked on a copy); `flows_planta.json` matches all 87 NodeIds.
+  - [ ] Steps 4-7 **at the next plant visit** (remote access is not possible). Follow `node-red/plant_visit_checklist.md`: build and check the DLL, deploy to the Edge, check the log / CDF / OPC UA / first :59, back up and import the Node-RED flow.
+- [x] Local Node-RED in `node-red/local_sim` (Node-RED 4.1.17, `npm start`, 127.0.0.1:1880), running `flows_planta.json` against the emulator. Tested 2026-11-08:
+  - `/api/data_week` returns 65 matrices, matching the emulator 167/167 hours;
+  - `/get-printer-data` returns the expected 12 hourly values, with no CR, for both date formats;
+  - out-of-range and invalid-line errors work.
+  - Matrices arrive as `{"0":..,"167":..}` objects.
+- [ ] Point a local Node-RED at `opc.tcp://localhost:59100` and test `flows_planta.json` end to end.
+
 ## Plant telemetry
 
 - [x] **`tr_raw_to_datapoints_superenvases` (id 404926) stopped writing on

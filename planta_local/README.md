@@ -23,19 +23,24 @@ Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtr
   caiga. Escribe los logs en `planta_local\logs\`.
 - `tv\tv.html` alterna a pantalla completa entre Línea 1 y Línea 3. Cada vista se recarga
   mientras está oculta, así el TV nunca muestra una pantalla de "cargando".
-- Las apps se conectan a CDF con la cuenta de servicio de `cognite-sdk\.env`. Los operadores
-  no inician sesión, por eso el Reporte de Producción se publica **en solo lectura**: no permite
-  editar observaciones.
+- **Los datos vienen del Node-RED de la planta, no de CDF.**
+  - `nodered_data.py` lee `GET /api/data_week` de Node-RED, que tiene las matrices semanales del Optix. Con ellas recalcula lo que las apps leían de CDF:
+    - el reporte horario de cada máquina, con las mismas fórmulas y constantes que la función `hourly_production_report`, cuya configuración reutiliza;
+    - los totales del turno por máquina y por línea.
+  - `local_services\` tiene el `cdf_service.py` que reemplaza al de cada app. `run_app.py` lo usa en lugar del original, y el `main.py` de cada app no cambia.
+- **Solo la última semana.** Las matrices del Optix guardan 7 días: el reporte acepta fechas desde hace 6 días, y para fechas anteriores muestra un aviso.
+- **Datos por hora.** Los datos llegan por hora, igual que en Fusion: cada hora aparece cuando termina (minuto 59).
+- **Producción durante un corte.** Lo producido durante un corte de datos se suma a la primera hora con datos después del corte, así el total del turno queda completo.
+- **Estado de la conexión.** Al pie del Reporte se ve la hora de la última lectura de Node-RED, en rojo si tiene más de 15 minutos o si la última lectura falló.
+- **Solo lectura.** Los operadores no inician sesión, por eso el Reporte de Producción se publica **en solo lectura**: no permite editar observaciones.
+- **Volver a CDF.** Para usar CDF en vez de Node-RED: `DATA_SOURCE = "cdf"` en `planta_server.py`. Necesita `cognite-sdk\.env` y salida a internet.
 
 ## Requisitos del servidor
 
-- Windows 10/11 o Windows Server, encendido de forma permanente y en la red de la planta.
-- Salida a internet hacia `https://aw-was-gp-001.cognitedata.com` y hacia el proveedor de
-  identidad de la cuenta de servicio. Si la planta usa proxy, configúralo para la cuenta SYSTEM.
-- Python 3.11 o superior (https://www.python.org, con la opción "Add to PATH").
-- La carpeta `cognite-sdk` completa (este repositorio) y el archivo `cognite-sdk\.env` con las
-  credenciales de CDF. Lo ideal es una cuenta de servicio **de solo lectura** (series de tiempo
-  y eventos).
+- **Equipo:** Windows 10/11 o Windows Server, encendido de forma permanente y en la red de la planta.
+- **Acceso a Node-RED:** debe poder llegar al Node-RED de la planta, puerto 1880, con el flujo `flows_planta.json`, que publica `/api/data_week`. La dirección se configura en `NODERED_URL` de `planta_server.py`; por defecto es el mismo equipo, `http://127.0.0.1:1880`. **No necesita internet ni credenciales de CDF.**
+- **Python** 3.11 o superior (https://www.python.org, con la opción "Add to PATH").
+- **El repositorio:** la carpeta `cognite-sdk` completa. Usa `planta_local\` y la configuración de `functions\hourly_production_report\`.
 
 ## Instalación
 

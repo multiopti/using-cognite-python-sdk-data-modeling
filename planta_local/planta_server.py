@@ -27,7 +27,9 @@ LOGS = HERE / "logs"
 LOGS.mkdir(exist_ok=True)
 
 TV_PORT = 8500
-REFRESH_S = 60            # every app re-reads CDF this often (viewers keep their filters)
+REFRESH_S = 60            # every app re-reads its data this often (viewers keep their filters)
+DATA_SOURCE = "nodered"   # "nodered": the plant's Node-RED (no CDF/internet); "cdf": Cognite Data Fusion (.env)
+NODERED_URL = "http://127.0.0.1:1880"   # Node-RED on the plant network (/api/data_week)
 APPS = [
     # (app folder, port, read_only)
     ("linea1_plant_view", 8501, True),
@@ -45,7 +47,8 @@ def log(msg):
 
 def start_app(folder, port, read_only):
     env = dict(os.environ, PLANT_REFRESH_S=str(REFRESH_S), PLANT_READ_ONLY="1" if read_only else "0",
-               PYTHONUTF8="1")
+               PLANT_DATA_SOURCE=os.environ.get("PLANT_DATA_SOURCE", DATA_SOURCE),
+               PLANT_NODERED_URL=os.environ.get("PLANT_NODERED_URL", NODERED_URL), PYTHONUTF8="1")
     cmd = [sys.executable, "-m", "streamlit", "run", str(HERE / "run_app.py"),
            "--server.port", str(port), "--server.address", "0.0.0.0", "--server.headless", "true",
            "--client.toolbarMode", "viewer", "--browser.gatherUsageStats", "false",

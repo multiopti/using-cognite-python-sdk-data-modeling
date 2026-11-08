@@ -11,8 +11,12 @@ viewers (a TV plus a few operator PCs), since one loop can't run two coroutines 
 different threads.
 
 Environment (set by planta_server.py):
-    PLANT_REFRESH_S   re-run the app every N seconds (keeps each viewer's filters); 0 = off
-    PLANT_READ_ONLY   "1" -> apps that allow editing (Reporte de Producción) show read-only
+    PLANT_REFRESH_S     re-run the app every N seconds (keeps each viewer's filters); 0 = off
+    PLANT_READ_ONLY     "1" -> apps that allow editing (Reporte de Producción) show read-only
+    PLANT_DATA_SOURCE   "nodered" (default): data from the plant's Node-RED, no CDF or internet needed --
+                        local_services/<app>/cdf_service.py replaces the app's own cdf_service.py;
+                        "cdf": the apps' own cdf_service.py (needs cognite-sdk/.env and internet)
+    PLANT_NODERED_URL   Node-RED base URL for "nodered" (default http://127.0.0.1:1880)
 """
 import ast
 import asyncio
@@ -29,7 +33,13 @@ MAIN = APP_DIR / "main.py"
 
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
-os.chdir(ROOT)                                           # cdf_auth's load_dotenv() finds cognite-sdk/.env
+# Data from the plant's Node-RED: the local cdf_service.py goes AHEAD of the app's own (and nodered_data is importable)
+LOCAL_SERVICE = {"linea1_plant_view": "plant_view", "linea3_plant_view": "plant_view", "streamlit": "reporte"}
+if os.environ.get("PLANT_DATA_SOURCE", "nodered").lower() == "nodered":
+    for p in (Path(__file__).resolve().parent, Path(__file__).resolve().parent / "local_services" / LOCAL_SERVICE[sys.argv[1]]):
+        if str(p) not in sys.path:
+            sys.path.insert(0, str(p))
+os.chdir(ROOT)                                           # cdf_auth's load_dotenv() finds cognite-sdk/.env ("cdf" mode)
 
 
 @st.cache_resource
