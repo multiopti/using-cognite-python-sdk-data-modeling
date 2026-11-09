@@ -128,7 +128,12 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - the local reporte service shows and saves incidents;
     - `planta_server` makes the Reporte editable (read-only only in "cdf" mode).
   - Tested end to end: validation, one-cell write, the Reporte shows and saves, unfinished hour refused, cleanup.
-- [ ] Incidents in the **plant project**: run `add_obs_matrices.py --project <plant>` (after a fresh backup) and add it to the plant visit checklist (deploy together with the D&I/Minster matrices).
+- [x] Incidents in the **plant project**, applied 2026-11-09 (not deployed).
+  - Fresh backup `Projects_backup\Superenvases_20261109_0838`.
+  - `add_obs_matrices.py --project <plant>`: 1 new file and 3 changed, additions only, identical to the dry run.
+  - NodeIds identical to the simulation's; no duplicate ids; C# compiles.
+  - `flows_planta.json` now matches the plant project with no problems: 119 keys, 15 sessions.
+  - `node-red/plant_visit_checklist.md` updated.
 - [x] Wording: the save messages in `streamlit/main.py` no longer mention CDF ("Guardando observaciones ...", "¡N registro(s) actualizados correctamente! 🎉", "Error al guardar los cambios: ...", "Error consultando datos para <máquina>: ..."). Applies to the plant's local server; the Fusion app only changes if it is redeployed by hand.
 - [ ] (design notes) **Editable hourly incidents ("Observaciones") in the plant's Reporte de Producción** (client request, 2026-11-08). Agreed design:
   - Storage: one `Int32[7,24]` `<machine>_OBS_DATA_WEEK` matrix per machine in Optix (32), holding incident codes = index in `INCIDENTES_OPCIONES`. -1 = none. The list is append-only.
