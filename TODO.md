@@ -128,6 +128,19 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - the local reporte service shows and saves incidents;
     - `planta_server` makes the Reporte editable (read-only only in "cdf" mode).
   - Tested end to end: validation, one-cell write, the Reporte shows and saves, unfinished hour refused, cleanup.
+- [x] **planta_local without cognite-sdk** (2026-11-09).
+  - `streamlit/main.py`:
+    - the `EventsAcl` import is optional;
+    - `PLANT_READ_ONLY="0"` means anyone with access to the page may edit (no CDF check); `"1"` means read-only;
+    - unset (Fusion) keeps the CDF capability check.
+  - The local reporte service no longer imports cognite.
+  - `requirements.txt`: no cognite-sdk or python-dotenv (listed as extras for "cdf" mode).
+  - `install_service.ps1`: asks for `.env` only when `DATA_SOURCE = "cdf"`.
+  - Tested in a clean venv with no cognite/dotenv:
+    - all 3 apps run with cognite never loaded;
+    - Reporte editable with "0", read-only with "1";
+    - the incident test passes.
+- [ ] Offline install package for the plant PC if it has no internet (download the wheels for its Python version; Python installer on USB).
 - [x] Incidents in the **plant project**, applied 2026-11-09 (not deployed).
   - Fresh backup `Projects_backup\Superenvases_20261109_0838`.
   - `add_obs_matrices.py --project <plant>`: 1 new file and 3 changed, additions only, identical to the dry run.

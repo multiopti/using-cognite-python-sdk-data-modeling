@@ -6,26 +6,17 @@ Production Report events (planta_local/nodered_data.py). Only the last 7 days ex
 Hourly incidents ("Observaciones") are stored in FT Optix, one weekly matrix per machine, as the index of the chosen
 option in config.INCIDENTES_OPCIONES (that list must only grow at the end). They are saved through Node-RED
 (POST /api/observacion). An hour without a stored incident shows the automatic text (e.g. "Parada por latas cortas").
-Whether operators may edit is decided by planta_server.py (PLANT_READ_ONLY); there is no per-user login.
-run_app.py puts this folder ahead of the app's own folder on sys.path when PLANT_DATA_SOURCE=nodered.
+Whether operators may edit is decided by planta_server.py through PLANT_READ_ONLY ("0" = anyone with access to the
+page may edit, "1" = read-only), which main.py checks before anything CDF-related; there is no per-user login.
+No cognite-sdk needed. run_app.py puts this folder ahead of the app's own folder on sys.path when
+PLANT_DATA_SOURCE=nodered.
 """
-from types import SimpleNamespace
-
 import pandas as pd
-from cognite.client.data_classes.capabilities import EventsAcl
 
 import nodered_data as nd
 from config import INCIDENTES_OPCIONES, SHIFT_MAP   # Reporte de Producción's own config
 
-
-async def _inspect():
-    """Answers main.py's permission check (client.iam.token.inspect) with "may edit": on the plant server editing is
-    controlled by PLANT_READ_ONLY, which main.py checks first."""
-    return SimpleNamespace(capabilities=[SimpleNamespace(
-        capability=EventsAcl([EventsAcl.Action.Read, EventsAcl.Action.Write], EventsAcl.Scope.All()))])
-
-
-client = SimpleNamespace(iam=SimpleNamespace(token=SimpleNamespace(inspect=_inspect)))
+client = None   # main.py imports it; with PLANT_READ_ONLY set it never uses it (no CDF on the plant server)
 
 
 def _incident_text(code):

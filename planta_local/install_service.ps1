@@ -7,8 +7,10 @@
 # 3. Registers a scheduled task that starts planta_server.py at boot (no user needs to log in)
 #    and restarts it if it stops
 #
-# Requires Python 3.11+ on PATH ("py" launcher or "python") and cognite-sdk\.env with the CDF
-# service-account credentials (see env.example).
+# Requires Python 3.11+ on PATH ("py" launcher or "python"). With DATA_SOURCE = "nodered" in
+# planta_server.py (the default) nothing else: data comes from the plant's Node-RED, no CDF, no .env.
+# Only with DATA_SOURCE = "cdf": cognite-sdk\.env with the CDF service-account credentials, and the
+# extra packages listed at the end of requirements.txt.
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -20,7 +22,10 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Ejecuta este script como Administrador."
 }
-if (-not (Test-Path (Join-Path $root ".env"))) {
+$dataSource = ((Select-String -Path (Join-Path $here "planta_server.py") -Pattern '^DATA_SOURCE\s*=\s*"(\w+)"' |
+                Select-Object -First 1).Matches.Groups[1].Value)
+Write-Host "Fuente de datos: $dataSource"
+if ($dataSource -eq "cdf" -and -not (Test-Path (Join-Path $root ".env"))) {
     throw "Falta $root\.env con las credenciales de CDF (copia env.example y complétalo)."
 }
 

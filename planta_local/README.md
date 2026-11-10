@@ -38,7 +38,13 @@ Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtr
   - **Horas sin incidencia:** muestran el texto automático ("Operación normal", "Parada por latas cortas"...).
   - **La lista de incidencias:** en `streamlit\config.py`. **Solo se agregan opciones al final**, porque Optix guarda la posición en la lista.
   - **Sin login:** no hay usuarios. Para volver a solo lectura, pon `True` en la fila del Reporte de `APPS` en `planta_server.py`. Con `DATA_SOURCE = "cdf"` el Reporte queda siempre en solo lectura.
-- **Volver a CDF.** Para usar CDF en vez de Node-RED: `DATA_SOURCE = "cdf"` en `planta_server.py`. Necesita `cognite-sdk\.env` y salida a internet.
+- **Sin cognite-sdk.** Con Node-RED el servidor no usa ninguna librería de CDF: `requirements.txt` solo instala Streamlit, pandas, numpy y plotly.
+- **Volver a CDF.** Para usar CDF en vez de Node-RED: `DATA_SOURCE = "cdf"` en `planta_server.py`. Necesita además:
+  - instalar `cognite-sdk[pandas]` y `python-dotenv` (las versiones están al final de `requirements.txt`);
+  - `cognite-sdk\.env`;
+  - salida a internet.
+
+  En ese modo el Reporte queda en solo lectura.
 
 ## Requisitos del servidor
 
@@ -49,8 +55,8 @@ Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtr
 
 ## Instalación
 
-1. Copia la carpeta `cognite-sdk` al servidor, por ejemplo en `C:\planta\cognite-sdk`, y coloca
-   el `.env`.
+1. Copia la carpeta `cognite-sdk` al servidor, por ejemplo en `C:\planta\cognite-sdk`. El `.env`
+   solo hace falta con `DATA_SOURCE = "cdf"`.
 2. Abre PowerShell **como Administrador** y ejecuta:
    ```powershell
    cd C:\planta\cognite-sdk
@@ -98,8 +104,9 @@ Después de cambiarlo, reinicia la tarea: `Restart-ScheduledTask "Planta - Servi
 
 - **No abre ninguna dirección:** revisa que la tarea esté en ejecución
   (`Get-ScheduledTask "Planta - Servidor Streamlit"`) y el firewall.
-- **Una app muestra un error de CDF:** revisa `planta_local\logs\<app>.log`. Lo habitual es que
-  el `.env` esté incompleto o que falte la salida a internet o el proxy.
-- **Todos los valores en 0:** las máquinas no están enviando datos válidos a CDF (falla de red o
-  del PLC en planta). Las apps muestran correctamente lo que hay en CDF. Puedes comprobarlo en la
-  misma app dentro de Fusion.
+- **Una app muestra un error:** revisa `planta_local\logs\<app>.log`. Lo habitual es que Node-RED
+  no responda en `NODERED_URL`: abre `http://<nodered>:1880/api/data_week` en un navegador.
+- **Valores en N/A o sin datos:** el Optix no está recibiendo datos del PLC (corte de luz, falla de
+  red o del PLC). Las apps muestran correctamente lo que hay en las matrices del Optix.
+- **Con `DATA_SOURCE = "cdf"`:** si hay errores de CDF, revisa el `.env`, la salida a internet o el
+  proxy.

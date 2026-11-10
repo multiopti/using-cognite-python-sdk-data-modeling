@@ -7,7 +7,12 @@ import asyncio
 import os
 from datetime import date, timedelta
 import pandas as pd
-from cognite.client.data_classes.capabilities import EventsAcl
+try:
+    from cognite.client.data_classes.capabilities import EventsAcl
+except ImportError:
+    # Plant's local server (planta_local/, data from Node-RED): cognite-sdk is not installed there and
+    # editing is decided by PLANT_READ_ONLY, so the CDF permission check below is never needed.
+    EventsAcl = None
 
 # Las importaciones locales van DESPUÉS de set_page_config
 import base64
@@ -102,11 +107,17 @@ async def user_can_edit_reports(client) -> bool:
     (red, permisos, forma de respuesta inesperada) se asume que NO puede
     editar (False), por seguridad.
     """
-    # Plant's local server (planta_local/): every operator PC shares one service account, so
-    # editing would be anonymous -- the server sets PLANT_READ_ONLY to show the report read-only.
-    # Never set inside Fusion, where each user signs in with their own CDF identity.
-    if os.environ.get("PLANT_READ_ONLY", "").lower() in ("1", "true", "yes"):
+    # Plant's local server (planta_local/) sets PLANT_READ_ONLY and decides by itself, with no login:
+    #   "1" -> read-only;  "0" -> anyone with access to the page may edit (incidents are stored in
+    #   FT Optix through Node-RED, not in CDF). Never set inside Fusion, where each user signs in with
+    #   their own CDF identity and the capability check below applies.
+    plant_read_only = os.environ.get("PLANT_READ_ONLY", "").strip().lower()
+    if plant_read_only in ("1", "true", "yes"):
         return False
+    if plant_read_only in ("0", "false", "no"):
+        return True
+    if EventsAcl is None:
+        return False   # no cognite-sdk and no plant setting: nothing to check permissions against
 
     try:
         inspection = await client.iam.token.inspect()

@@ -1,9 +1,10 @@
-# Plant-floor server (planta_local/). Pinned to the versions it was tested with on 2026-10-19,
-# so a reinstall on the plant server behaves exactly like the tested setup.
+# Plant-floor server (planta_local/), data from the plant's Node-RED (DATA_SOURCE = "nodered").
+# No cognite-sdk: nothing connects to CDF. Pinned to the tested versions, so a reinstall on the
+# plant server behaves exactly like the tested setup.
 streamlit==1.62.0
 streamlit-autorefresh==1.0.1
-cognite-sdk[pandas]==8.13.0
 pandas==2.3.3
 numpy>=1.26
 plotly==6.9.0
-python-dotenv==1.2.3
+# Only for DATA_SOURCE = "cdf" (reading CDF instead of Node-RED), install also:
+#   cognite-sdk[pandas]==8.13.0  python-dotenv==1.2.3     (and cognite-sdk\.env with the credentials)
