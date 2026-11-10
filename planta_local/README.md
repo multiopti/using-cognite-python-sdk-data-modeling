@@ -97,8 +97,8 @@ En `planta_server.py`:
 - `REFRESH_S`: cada cuántos segundos se actualizan los datos (60 por defecto).
 - `APPS`: qué apps se publican, en qué puerto y si son de solo lectura.
 
-Después de cambiarlo, reinicia la tarea: `Restart-ScheduledTask "Planta - Servidor Streamlit"`
-(o reinicia el servidor).
+Después de cambiarlo, reinicia el servidor de planta (ver "Day-to-day operation" en
+`PLANT_INSTALL_GUIDE.md`) o reinicia el equipo.
 
 ## Si algo no funciona
 
