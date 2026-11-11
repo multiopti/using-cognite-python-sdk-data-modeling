@@ -142,7 +142,7 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - the incident test passes.
 - [ ] Offline install package for the plant PC if it has no internet (download the wheels for its Python version; Python installer on USB).
 - [x] Incidents in the **plant project**, applied 2026-11-09 (not deployed).
-  - Fresh backup `Projects_backup\Superenvases_20261109_0838`.
+  - Fresh backup `Superenvases_20261109_0838` (now `E:\source\repos\streamlit\backups\optix_plant_Superenvases_20261109_0838`).
   - `add_obs_matrices.py --project <plant>`: 1 new file and 3 changed, additions only, identical to the dry run.
   - NodeIds identical to the simulation's; no duplicate ids; C# compiles.
   - `flows_planta.json` now matches the plant project with no problems: 119 keys, 15 sessions.
@@ -199,7 +199,7 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - grant the function's service account RAW read and events write.
   - **Testing:** simulation with a LOCAL broker only (never AWS); the function with `dry_run`; then the plant project additions with a backup and a dry run.
   - **NEXT (resume 2026-11-10), awaiting the user's go-ahead, in this order:**
-    1. **(Done 2026-11-10) Simulation** (`plant_simulation`, backup `plant_simulation_backup_20261110`):
+    1. **(Done 2026-11-10) Simulation** (`plant_simulation`, backup `E:\source\repos\streamlit\backups\plant_simulation_20261110`):
        - `replay_data/add_incident_sync.py --local-broker --period-min 1` added `OBSERVACIONES_SYNC/INCIDENTS_SNAPSHOT`, the `IncidentSnapshot` NetLogic (60 s, read-only on the matrices) and an MQTTClient to 127.0.0.1:1883 (no TLS) with `MQTTPublisherIncidents`. MQTT namespaces 33/34 were restored in `Superenvases.optix`.
        - NOTE: `remove_cloud.py` would delete this MQTT client again.
        - Broker: this PC's Mosquitto service (default config, local only). Local Node-RED test tab (`make_local_flow.py`, only in `flows_local.json`): `GET /api/test/mqtt_messages`.
@@ -227,7 +227,12 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
        - Checked with AppTest in all 3 modes.
        - Deploy to Fusion by hand together with the function.
        - Original plan for this step: **Fusion read-only:** in `streamlit/main.py` `user_can_edit_reports`, when `PLANT_READ_ONLY` is unset (Fusion), return False instead of the CDF ACL check. The plant is unaffected. You deploy it to Fusion by hand, together with the function.
-    4. **Plant Optix project:** a backup and a dry-run report of the additions for the user's approval. Then deploy at the plant, create the hosted extractor job, and test: `dry_run`, then one machine, then all.
+    4. **(Applied 2026-11-10, NOT deployed) Plant Optix project:**
+       - `add_incident_sync.py --project <plant>` after a backup at `E:\source\repos\streamlit\backups\optix_plant_Superenvases_20261110_2232`.
+       - Dry run first on a copy (`E:\source\repos\streamlit\plant_dryrun`, deleted afterwards because it held the AWS IoT private key); the copy compiles with the plant's real code.
+       - Result: 2 new files, Model.yaml +1, MQTT.yaml +69 (publisher appended to the existing MQTTClient), NetLogic.yaml +3; nothing removed; byte-identical to the dry run.
+       - On-site steps: `node-red/plant_visit_checklist.md` section 6.
+       - Original plan for this step: **Plant Optix project:** a backup and a dry-run report of the additions for the user's approval. Then deploy at the plant, create the hosted extractor job, and test: `dry_run`, then one machine, then all.
   - **Open questions:**
     - (Confirmed by the user 2026-11-09) A delay of about 5–10 min between the operator's report and CDF is OK.
     - (Confirmed by the user 2026-11-10) The Optix certificate's IoT policy does not restrict publish topics: no AWS change needed.
@@ -297,7 +302,7 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
   - Verified with `node-red/verify_flow.py` against both Optix projects, and live: 13 connections, 87 keys, values correct.
 - [ ] Plant project: apply with `add_di_minster_matrices.py --project <copy of plant project> --mode plant`, then deploy to the Edge module. Decide with the client first.
   - **Plan agreed 2026-11-08.** Dry run on a copy: 7 files, additions only (5 model folders + Retentivity + TimeUpdater). The new matrices start at -1 (fix a).
-  - [x] Step 1: full backup of the plant project at `C:\Users\sanch\Documents\Rockwell Automation\FactoryTalk Optix\Projects_backup\Superenvases_20261108_1444` (3,250 files, verified by hash).
+  - [x] Step 1: full backup of the plant project, `Superenvases_20261108_1444` (3,250 files, verified by hash). Moved 2026-11-10 to `E:\source\repos\streamlit\backups\optix_plant_Superenvases_20261108_1444`. All backups live in `E:\source\repos\streamlit\backups\`, outside the git repo.
   - [x] Step 2: initial value -1 (`{"Type":6,"Dimensions":[7,24],"Body":[...]}`) is in the script. Confirmed in the emulator on 2026-11-08 15:20: a test matrix read Int32 [7,24] with 168 × -1, status Good. The test matrix was removed afterwards.
   - Studio's build can exceed its timeout and still report "built successfully" with no `bin\Superenvases.dll`. Before any deploy, check that the DLL exists; after the deploy, check the log for "Unable to find the .NET assembly". In the plant that would stop TimeUpdater **and** the push to CDF.
   - [x] Step 3 (2026-11-08): **applied to the real plant project**.
