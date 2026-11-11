@@ -155,7 +155,83 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
   - Read: `/api/data_week`.
   - Anyone with access to the page can edit, for now.
   - Same process as the D&I/Minster matrices: simulation first, then the plant project.
-- [ ] Later: plant incidents are NOT synced to CDF (the Fusion app keeps its own observations in CDF events). Decide whether/how to sync them.
+- [ ] **Sync plant incidents to CDF** (plan agreed 2026-11-09, awaiting go-ahead).
+  - **Decisions:**
+    - Only the Optix Edge sends data to AWS.
+    - The plant is the only place incidents are edited: when this ships, incident editing in Fusion is disabled (the Reporte becomes read-only in Fusion).
+    - One direction only: plant to CDF.
+  - **Path:**
+    - Optix, additions only: a `IncidentSnapshot` NetLogic writes `INCIDENTS_SNAPSHOT` (JSON: the cells with an incident) every 5 min. It goes in a new folder outside PushDataMosaix.
+    - A new `MQTTPublisherIncidents` in the EXISTING MQTTClient (same connection, cert and client id; no store-and-forward) publishes on topic `SuperenvasesIncidents/snapshot`, outside `Superenvases/#`.
+    - AWS IoT Core.
+    - A NEW hosted extractor job (same source) writes to RAW `db_superenvases_raw.raw_incident_snapshots`.
+    - A scheduled CDF Function `plant_incident_sync` writes each reported incident to its `Production Report` event: the incident text in `observations`, plus `incident_code` and `incident_synced_at`.
+      - There is no clearing: incidents are only reported. Any code >= 0, including 0 "Operación estándar", is written. A changed code overwrites the old one.
+      - -1 (nothing reported) is never touched, so observations entered earlier in Fusion stay.
+      - It waits if the event doesn't exist yet, and ignores the column the weekly wipe has just cleared.
+  - **Confirmed 2026-11-09** in Fusion (Integrate › Extraction pipelines › `MQTT_AWS_July2026`):
+    - the only job has topic filter `Superenvases/#`, format "FT Optix", data set `dataset_200726_195956`;
+    - the new job is added there with "Add job".
+    - The existing job is a custom mapping into RAW (`raw_row`, key = topic with `/` → `_` + `_` + `input.Timestamp`, columns `topic`, `records`, `timestamp`).
+  - **New job, to create at the plant step only after Optix publishes:**
+    - Before creating it, create the table `raw_incident_snapshots` in Integrate › Staging if the job doesn't create it on its own.
+    - Topic filter: `SuperenvasesIncidents/#`.
+    - Message format: FT Optix. Input format: JSON.
+    - Step 3 Destination: the same as the existing job.
+    - Transformation code:
+      ```
+      {
+        "type": "raw_row",
+        "database": "db_superenvases_raw",
+        "table": "raw_incident_snapshots",
+        "key": concat(replace(context.topic, "/", "_"), "_", input.Timestamp),
+        "columns": {
+          "topic": context.topic,
+          "records": input.Records,
+          "timestamp": input.Timestamp
+        }
+      }
+      ```
+  - **Why a separate topic and table:** `raw_mqtt_messages` only has numeric `Value`s. A text value could change the type the datapoints transformation works out for that column.
+  - **The user must do:**
+    - create the hosted extractor job (the `.env` service account gets 403 on hosted extractors);
+    - (not needed, confirmed 2026-11-10) the Optix certificate's IoT policy already allows any topic;
+    - grant the function's service account RAW read and events write.
+  - **Testing:** simulation with a LOCAL broker only (never AWS); the function with `dry_run`; then the plant project additions with a backup and a dry run.
+  - **NEXT (resume 2026-11-10), awaiting the user's go-ahead, in this order:**
+    1. **(Done 2026-11-10) Simulation** (`plant_simulation`, backup `plant_simulation_backup_20261110`):
+       - `replay_data/add_incident_sync.py --local-broker --period-min 1` added `OBSERVACIONES_SYNC/INCIDENTS_SNAPSHOT`, the `IncidentSnapshot` NetLogic (60 s, read-only on the matrices) and an MQTTClient to 127.0.0.1:1883 (no TLS) with `MQTTPublisherIncidents`. MQTT namespaces 33/34 were restored in `Superenvases.optix`.
+       - NOTE: `remove_cloud.py` would delete this MQTT client again.
+       - Broker: this PC's Mosquitto service (default config, local only). Local Node-RED test tab (`make_local_flow.py`, only in `flows_local.json`): `GET /api/test/mqtt_messages`.
+       - Verified:
+         - the message is `{"Records":[{"TagName":"INCIDENTS_SNAPSHOT","Value":"<json>"}],"Timestamp":"<UTC>"}`, the same format as the existing publishers;
+         - a saved incident appears in the next snapshot, and a changed code replaces it;
+         - other machines are unchanged; 278 bytes.
+       - Original plan for this step:
+       - add the `IncidentSnapshot` NetLogic, the `INCIDENTS_SNAPSHOT` variable and a publisher pointed at a LOCAL MQTT broker (needs a local broker, e.g. mosquitto or a Node-RED aedes node);
+       - check that a save in the Reporte shows up in the next message;
+       - check that the message format matches the existing publishers (`Records[{TagName, Value}]`, `Timestamp`).
+    2. **(Done 2026-11-10, NOT deployed) CDF Function** `functions/plant_incident_sync/`: handler, config, README, `test_handler.py` (12 offline tests pass) and `local_test.py`.
+       - Dry run against real CDF (nothing written): the simulation snapshot maps to the real events standum32 2026-11-05 day entries 01–12; a snapshot built now maps yesterday's day and night hours to existing events; RAW reports `no_raw_table` until the job and the table exist.
+       - Deploy steps are in its README.
+       - Original plan for this step: **CDF Function** `functions/plant_incident_sync/` (`handler.py`, `config.py`, `local_test.py`, README).
+       - It reads the latest row of `raw_incident_snapshots` from the last 30 min, converts the UTC timestamp to UTC-4, and maps each cell to its event `report_{code}_{yyyymmdd}_{day|night}_entry_{NN}`.
+       - Machine mapping: as in `planta_local/nodered_data.py` `MACHINES` / `obs_machine`.
+       - Night hours 00–05 belong to the previous date.
+       - It updates only events whose `observations` / `incident_code` differ.
+       - Unit tests; `dry_run` against real CDF with snapshots from the simulation (no writes).
+       - You deploy it by hand, as a new function with a schedule every 5 min (see CLAUDE.md: functions can't be updated in place).
+    3. **(Done 2026-11-10, NOT deployed to Fusion)** `streamlit/main.py`:
+       - `FUSION_INCIDENT_EDITING = False`: with no `PLANT_READ_ONLY` setting (Fusion), the Reporte is read-only, with the notice "Las incidencias se registran en el Reporte de Producción de la planta y se actualizan aquí automáticamente."
+       - The plant setting is unchanged ("0" edits, "1" read-only, now with its own notice).
+       - Checked with AppTest in all 3 modes.
+       - Deploy to Fusion by hand together with the function.
+       - Original plan for this step: **Fusion read-only:** in `streamlit/main.py` `user_can_edit_reports`, when `PLANT_READ_ONLY` is unset (Fusion), return False instead of the CDF ACL check. The plant is unaffected. You deploy it to Fusion by hand, together with the function.
+    4. **Plant Optix project:** a backup and a dry-run report of the additions for the user's approval. Then deploy at the plant, create the hosted extractor job, and test: `dry_run`, then one machine, then all.
+  - **Open questions:**
+    - (Confirmed by the user 2026-11-09) A delay of about 5–10 min between the operator's report and CDF is OK.
+    - (Confirmed by the user 2026-11-10) The Optix certificate's IoT policy does not restrict publish topics: no AWS change needed.
+    - Is a hosted extractor RAW table created automatically, or must it exist first?
 - [ ] Skipped: the Excel report's "Observaciones" column stays manual (operators fill it themselves).
 - [ ] (old plan, superseded by the above) Local Streamlit server (`planta_local/`):
   - a collector reading `/api/data_week` (or the Optix OPC UA directly), with history in SQLite;

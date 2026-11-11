@@ -81,6 +81,23 @@ active_machine_code = applied["machine_code"]
 active_turno = applied["turno"]
 
 
+# Incidents ("Observaciones") are entered ONLY in the plant's Reporte de Producción (planta_local, stored in FT Optix)
+# and reach CDF through the plant_incident_sync Function. So in Fusion (no PLANT_READ_ONLY setting) the report is
+# read-only for everyone. Set to True to go back to editing in Fusion by CDF permission (EventsAcl WRITE) -- but then
+# the plant and Fusion would both write the same hours, and the plant sync would overwrite Fusion's edits.
+FUSION_INCIDENT_EDITING = False
+
+
+def read_only_notice() -> str:
+    """Why this report is read-only, for the notice under the table."""
+    if os.environ.get("PLANT_READ_ONLY", "").strip() == "" and not FUSION_INCIDENT_EDITING:
+        return ("🔒 **Modo Vista:** Las incidencias se registran en el Reporte de Producción de la planta "
+                "y se actualizan aquí automáticamente.")
+    if os.environ.get("PLANT_READ_ONLY", "").strip() != "":
+        return "🔒 **Modo Vista:** Este reporte está configurado en solo lectura."
+    return "🔒 **Modo Vista:** Tu usuario no tiene permiso de escritura sobre eventos y no puede guardar observaciones."
+
+
 async def user_can_edit_reports(client) -> bool:
     """
     Determina si el usuario puede editar/guardar reportes, mirando su
@@ -116,6 +133,8 @@ async def user_can_edit_reports(client) -> bool:
         return False
     if plant_read_only in ("0", "false", "no"):
         return True
+    if not FUSION_INCIDENT_EDITING:
+        return False   # Fusion: incidents come from the plant (plant_incident_sync), nobody edits them here
     if EventsAcl is None:
         return False   # no cognite-sdk and no plant setting: nothing to check permissions against
 
@@ -303,7 +322,7 @@ edited_df = st.data_editor(
     column_config={
         "Observaciones": st.column_config.SelectboxColumn(
             "Observaciones / Incidencias",
-            help="Seleccione la falla o evento principal ocurrido en el bloque horario" if user_can_edit else "Modo de solo lectura -- tu usuario no tiene permiso de escritura sobre eventos",
+            help="Seleccione la falla o evento principal ocurrido en el bloque horario" if user_can_edit else "Modo de solo lectura",
             width="large",
             options=opciones_desplegable,
             required=True
@@ -345,7 +364,7 @@ if user_can_edit:
 else:
     # --- READ-ONLY USER: Hide Button & Display Notice ---
     with btn_save_col1:
-        st.info("🔒 **Modo Vista:** Tu usuario no tiene permiso de escritura sobre eventos y no puede guardar observaciones.")
+        st.info(read_only_notice())
 
 
 # ---------------------------------------------------------
