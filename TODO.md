@@ -38,6 +38,54 @@ Pending work tracked across sessions. Update as items are picked up/finished.
   across the gap. Explicitly deferred by the user ("it is ok, this is
   something we already know") -- revisit if the customer needs shift-level
   numbers to be accurate through a power-cut day, not just close.
+- [ ] **Counter jumps inflating hourly reports** (found 2026-11-16, NOT fixed yet; the user asked to just note them).
+  Over 30 days there were 21 Production Report hours with efficiency > 120 %, from three different causes:
+  1. **False production after a power cut (priority).**
+     - Example: PRINTER_L32, Mon 2026-11-16 04:00. The counter was 243,615 since Sat 14 17:52. When power came back,
+       Optix read **0** at 04:18 (before the PLC answered), then 243,615 again at 04:20.
+     - `calculate_hourly_counter_delta()` counts 0 → 243,615 as production: 243,615 cans at 203 % efficiency in an
+       hour the plant was stopped. It inflates shift totals and the Grafana rollups (LINE3 PRINTER). Not the Excel
+       short-can report, which has no printers.
+     - **Proposed fix:**
+       - also read the last valid datapoint BEFORE the window (`retrieve_latest(before=start)`, it can be days old);
+       - ignore a near-0 reading when the counter returns to ≥ its pre-zero value within a few minutes (a glitch,
+         not a reset);
+       - real resets (e.g. 340,545 → 1,545 at the 06:00 shift change) don't climb back, so they are unaffected.
+     - Optional safety net: flag (don't drop) any upward step larger than `nominal_capacity` × elapsed time × 1.5.
+     - Apply to `hourly_production_report/handler.py` and to `shift_reconciler/hourly_core.py` (`sync_core.py`).
+     - Test with a dry run against real CDF:
+       - p32 2026-11-16 04:00 must give 0;
+       - Thu 12 01:00 and Fri 13 05:00 must NOT change (cause 2, real production);
+       - a full normal day for all 32 machines must give identical numbers.
+     - Deploy as `-v2` (functions can't be updated in place). Then recompute p32 Mon 16 04:00
+       (`hours_ago` / `machine_codes`).
+  2. **Real production during a DATA outage lands in one hour** (Thu 12 01:00 and Fri 13 05:00, all of L1 at
+     170–265 %).
+     - The machines kept running while no data arrived for over 2 h. E.g. P11 249,502 → 332,334 over 2 h 15 min,
+       about 37k/h, which is plausible for a 66k/h capacity. When data came back it all landed in the first hour.
+     - The shift total is right; only the hourly distribution is wrong. Those outage hours also look like "plant
+       stopped" when they weren't (this skewed the 2026-11-09..13 summary's stopped-hours count).
+     - **Possible fix (phase 2, more delicate):** interpolate the counter at the hour boundaries, so the reconciler
+       (06:15/18:15) spreads the jump evenly over the outage hours. Within-shift only; the cross-shift case above
+       stays deferred.
+  - **Plant side (Optix matrices → planta_local / Node-RED): a different but related bug, FIXED 2026-11-16 (not
+    deployed).**
+    - Those hourly tables assumed the PLC resets the shift counter at 06:00/18:00, so the first hour with data showed
+      the whole counter. With the plant off at the shift change the counter isn't reset, so PRINTER_L32 would show
+      243,615 at Mon 04:00 and again ~243,700 at Mon 06:00. (CDF got the 06:00 hour right.)
+    - The rule agreed with the user: the first hour of the shift is measured against the last valid photo BEFORE the
+      shift (up to 6 days back). Counter went down → it reset → whole value. Not down → difference.
+    - Known small error: a real reset after a shift that produced less than the new first hour subtracts that
+      shift's count.
+    - Optix itself is unchanged (still one photo at minute 59).
+    - **planta_local:** `nodered_data.hourly()` + `last_before()`.
+    - **Node-RED:** `node-red/fix_first_hour_of_shift.py` patched `flows_planta.json` (Printer, ISPRAY, STANDUM, D&I,
+      MINSTER tables and `GET /get-printer-data`). Backup: `backups\node-red_flows_planta_20261116.json`.
+    - Tested with fabricated matrices: no reset → 0; normal reset → whole value; the rare case; night shift. 25
+      Node-RED checks + 5 Python checks pass.
+    - To deploy at the plant with the flow import and the planta_local install.
+  3. **MINSTER_L3 at 122–131 % with normal values** (late Oct, 5 hours). Its `nominal_capacity` (7,000 strokes/h) is
+     probably too low. Confirm the real value with the plant.
 - [x] **Email delivery to the customer.** Built on AWS SES (user's
   preference, see `user-prefers-aws` memory), wired into `handle()` via
   `_send_report_email` -- sends the freshly-updated `.xlsx` as a real

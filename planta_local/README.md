@@ -31,6 +31,11 @@ Los datos se actualizan solos cada 60 segundos. Cada operador conserva los filtr
 - **Solo la última semana.** Las matrices del Optix guardan 7 días: el reporte acepta fechas desde hace 6 días, y para fechas anteriores muestra un aviso.
 - **Datos por hora.** Los datos llegan por hora, igual que en Fusion: cada hora aparece cuando termina (minuto 59).
 - **Producción durante un corte.** Lo producido durante un corte de datos se suma a la primera hora con datos después del corte, así el total del turno queda completo.
+- **Primera hora del turno.** Se mide contra la última foto válida del contador antes del turno, buscando hasta 6 días atrás.
+  - Si el contador bajó, el PLC lo reinició al cambio de turno y la hora vale el contador completo.
+  - Si no bajó, el PLC no lo reinició (por ejemplo, la planta estaba apagada a las 06:00 o a las 18:00) y la hora vale la diferencia. Así no se cuenta como producción el valor que el contador conservaba de antes.
+  - Error pequeño conocido: si el contador sí se reinició después de un turno que produjo menos que la primera hora del turno nuevo, se resta lo de ese turno anterior.
+  - Node-RED usa la misma regla en sus pantallas y en el endpoint del Excel.
 - **Estado de la conexión.** Al pie del Reporte se ve la hora de la última lectura de Node-RED, en rojo si tiene más de 15 minutos o si la última lectura falló.
 - **Incidencias por hora.** En el Reporte de Producción cualquiera con acceso a la página puede elegir la **incidencia** de cada hora (columna "Observaciones / Incidencias") y guardarla.
   - **Dónde se guarda:** en FT Optix, en una matriz semanal por máquina (`Model/OBSERVACIONES`), a través de Node-RED (`POST /api/observacion`). Se conserva la última semana, como el resto de los datos.

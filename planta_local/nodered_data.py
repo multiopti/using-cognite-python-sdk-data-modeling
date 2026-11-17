@@ -171,21 +171,34 @@ def _value(series, hour_start):
     return v if isinstance(v, (int, float)) and v >= 0 else None      # -1 / -1001 / missing -> None
 
 
+def last_before(series, hour_start, now=None):
+    """Last valid counter value BEFORE hour_start, searching back over the whole window the matrix holds (up to 6
+    days, across Optix-off hours). None if there is none."""
+    now = now or datetime.now(LOCAL_TZ)
+    back = hour_start - timedelta(hours=1)
+    while back.date() >= oldest_date(now):
+        if _available(back, now) and _value(series, back) is not None:
+            return _value(series, back)
+        back -= timedelta(hours=1)
+    return None
+
+
 def hourly(series, hours, continuous=False, now=None):
     """Production of each hour from a counter matrix. Returns a list (one per hour) of:
        a number, None (hour finished but no data: Optix off or PLC error), or "pending" (not finished yet).
-    Shift counters restart at 06:00/18:00: the first hour with data is the counter itself. A counter that went down
-    restarted inside that hour (the whole value is that hour's). Hours without data are skipped and their production
-    lands in the next hour with data."""
+    Each hour is measured against the last valid value before it, and for the FIRST hour of the shift that is the
+    last valid value before the shift (last_before, up to 6 days back):
+      - the counter went down: it restarted (the PLC resets shift counters at 06:00/18:00, or mid-shift), so the whole
+        value is that hour's production;
+      - it did not go down: no restart, the hour is the difference. This covers a PLC that was off at the shift change
+        (power cut) and so never reset: its first reading after power returns is the counter kept from before, not
+        production (seen 2026-11-16: PRINTER_L32 kept 243,615 from Saturday).
+      - Small known error: a counter that DID reset, after a shift that produced less than the new first hour, loses
+        that previous shift's count (one photo per hour can't tell the two cases apart).
+    Hours without data are skipped and their production lands in the next hour with data. `continuous` (e.g. strokes
+    per coil, never reset with the shift) is kept for callers; the rule is now the same for every counter."""
     now = now or datetime.now(LOCAL_TZ)
-    last = None
-    if continuous:                                   # e.g. strokes per coil: start from the hour before the shift
-        back = hours[0] - timedelta(hours=1)
-        for _ in range(12):
-            if _available(back, now) and _value(series, back) is not None:
-                last = _value(series, back)
-                break
-            back -= timedelta(hours=1)
+    last = last_before(series, hours[0], now) if series else None
     out = []
     for h in hours:
         if not _available(h, now):
