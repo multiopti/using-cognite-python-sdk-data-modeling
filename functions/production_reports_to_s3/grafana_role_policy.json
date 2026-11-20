@@ -1,0 +1,78 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AthenaListForThePlugin",
+      "Effect": "Allow",
+      "Action": [
+        "athena:ListDataCatalogs",
+        "athena:ListWorkGroups",
+        "athena:ListDatabases",
+        "athena:ListTableMetadata",
+        "athena:GetDataCatalog",
+        "athena:GetDatabase",
+        "athena:GetTableMetadata"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AthenaQueryOnlyInPolarWorkgroup",
+      "Effect": "Allow",
+      "Action": [
+        "athena:StartQueryExecution",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults",
+        "athena:StopQueryExecution",
+        "athena:GetWorkGroup"
+      ],
+      "Resource": "arn:aws:athena:us-east-1:775232977034:workgroup/polar-grafana"
+    },
+    {
+      "Sid": "GlueReadPolarProductionOnly",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase",
+        "glue:GetDatabases",
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:GetPartition",
+        "glue:GetPartitions",
+        "glue:BatchGetPartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:us-east-1:775232977034:catalog",
+        "arn:aws:glue:us-east-1:775232977034:database/polar_production",
+        "arn:aws:glue:us-east-1:775232977034:table/polar_production/*"
+      ]
+    },
+    {
+      "Sid": "ReadProductionDataBucket",
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+      "Resource": "arn:aws:s3:::ingedaca-polar-production-data"
+    },
+    {
+      "Sid": "ReadProductionDataObjects",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::ingedaca-polar-production-data/production_hourly/*"
+    },
+    {
+      "Sid": "AthenaQueryResultsBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": [
+        "arn:aws:s3:::grafana-athena-query-results-ingedaca-polar",
+        "arn:aws:s3:::grafana-athena-query-results-ingedaca-polar/*"
+      ]
+    }
+  ]
+}

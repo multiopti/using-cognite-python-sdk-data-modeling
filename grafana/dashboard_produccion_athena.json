@@ -1,0 +1,1562 @@
+{
+  "title": "Reporte de Producción · Superenvases",
+  "uid": "polar-reporte-produccion",
+  "description": "Reporte horario por máquina y turno. Elija fecha, turno, tipo de máquina y máquina en los selectores. Para descargar: menú de cada panel › Inspect › Data › Download CSV (activar «Download for Excel»). Los datos para descargar (sección plegable al final) usan «Descarga: máquinas» y «Descarga: periodo», contado desde la fecha del turno elegida.",
+  "tags": [
+    "empresas-polar",
+    "produccion"
+  ],
+  "timezone": "America/Caracas",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d/d",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "refresh": "",
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds",
+        "label": "Fuente de datos",
+        "query": "grafana-athena-datasource",
+        "regex": "/[Pp]olar/",
+        "hide": 2,
+        "current": {},
+        "options": [],
+        "refresh": 1
+      },
+      {
+        "type": "query",
+        "name": "fecha",
+        "label": "Fecha del turno",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT DISTINCT shift_date FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY shift_date DESC",
+        "query": {
+          "rawSQL": "SELECT DISTINCT shift_date FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY shift_date DESC",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "custom",
+        "name": "turno",
+        "label": "Turno",
+        "query": "6AM-6PM : day, 6PM-6AM : night",
+        "current": {
+          "text": "6AM-6PM",
+          "value": "day"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "options": [
+          {
+            "text": "6AM-6PM",
+            "value": "day",
+            "selected": true
+          },
+          {
+            "text": "6PM-6AM",
+            "value": "night",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "type": "custom",
+        "name": "tipo",
+        "label": "Tipo de máquina",
+        "query": "MINSTER : MINSTER, D&I : DI, STANDUM : STANDUM, PRINTER : PRINTER, ISPRAY : ISPRAY",
+        "current": {
+          "text": "STANDUM",
+          "value": "STANDUM"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "options": [
+          {
+            "text": "MINSTER",
+            "value": "MINSTER",
+            "selected": false
+          },
+          {
+            "text": "D&I",
+            "value": "DI",
+            "selected": false
+          },
+          {
+            "text": "STANDUM",
+            "value": "STANDUM",
+            "selected": true
+          },
+          {
+            "text": "PRINTER",
+            "value": "PRINTER",
+            "selected": false
+          },
+          {
+            "text": "ISPRAY",
+            "value": "ISPRAY",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "type": "query",
+        "name": "maquina",
+        "label": "Máquina",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT DISTINCT machine FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') AND machine_type = '${tipo}' ORDER BY machine",
+        "query": {
+          "rawSQL": "SELECT DISTINCT machine FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') AND machine_type = '${tipo}' ORDER BY machine",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "descarga",
+        "label": "Descarga: máquinas",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT DISTINCT machine FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY machine",
+        "query": {
+          "rawSQL": "SELECT DISTINCT machine FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY machine",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": true,
+        "includeAll": true,
+        "hide": 0,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "custom",
+        "name": "periodo",
+        "label": "Descarga: periodo",
+        "query": "Turno seleccionado : turno, Día seleccionado (2 turnos) : dia, 7 días hasta la fecha : 7d, 30 días hasta la fecha : 30d, Mes de la fecha : mes, Mes anterior : mes_ant",
+        "current": {
+          "text": "Turno seleccionado",
+          "value": "turno"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "options": [
+          {
+            "text": "Turno seleccionado",
+            "value": "turno",
+            "selected": true
+          },
+          {
+            "text": "Día seleccionado (2 turnos)",
+            "value": "dia",
+            "selected": false
+          },
+          {
+            "text": "7 días hasta la fecha",
+            "value": "7d",
+            "selected": false
+          },
+          {
+            "text": "30 días hasta la fecha",
+            "value": "30d",
+            "selected": false
+          },
+          {
+            "text": "Mes de la fecha",
+            "value": "mes",
+            "selected": false
+          },
+          {
+            "text": "Mes anterior",
+            "value": "mes_ant",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "type": "query",
+        "name": "cols",
+        "label": "cols",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'hour_label AS \"Hora\", production AS \"PROD. LATAS\", short_cans AS \"LAT CORTAS\", trimmer_jams AS \"TRANC TRIMMER\", cans_by_short_can AS \"LAT x LAT CORTAS\", cans_by_trimmer_jam AS \"LAT x TRANC TRIM\", downtime_by_short_can_min AS \"Parada x lat cortas (min)\", downtime_by_trimmer_jam_min AS \"Parada x tranc trim (min)\", downtime_min AS \"Tiempo parada (min)\", scrap_kg AS \"Merma (kg)\", scrap_pct AS \"% Merma\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'STANDUM' THEN 'hour_label AS \"Hora\", production AS \"PROD. LATAS\", short_cans AS \"LAT CORTAS\", trimmer_jams AS \"TRANC TRIMMER\", cans_by_short_can AS \"LAT x LAT CORTAS\", cans_by_trimmer_jam AS \"LAT x TRANC TRIM\", downtime_by_short_can_min AS \"Parada x lat cortas (min)\", downtime_by_trimmer_jam_min AS \"Parada x tranc trim (min)\", downtime_min AS \"Tiempo parada (min)\", scrap_kg AS \"Merma (kg)\", scrap_pct AS \"% Merma\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'PRINTER' THEN 'hour_label AS \"Hora\", production AS \"Producción x hora\", retrac AS \"Retrac x hora\", blow_off AS \"Blow off\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'ISPRAY' THEN 'hour_label AS \"Hora\", production AS \"Producción x hora\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'MINSTER' THEN 'hour_label AS \"Hora\", golpes_bobina AS \"Golpes bobina\", golpes_turno AS \"Golpes turno\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'hour_label AS \"Hora\", production AS \"PROD. LATAS\", short_cans AS \"LAT CORTAS\", trimmer_jams AS \"TRANC TRIMMER\", cans_by_short_can AS \"LAT x LAT CORTAS\", cans_by_trimmer_jam AS \"LAT x TRANC TRIM\", downtime_by_short_can_min AS \"Parada x lat cortas (min)\", downtime_by_trimmer_jam_min AS \"Parada x tranc trim (min)\", downtime_min AS \"Tiempo parada (min)\", scrap_kg AS \"Merma (kg)\", scrap_pct AS \"% Merma\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'STANDUM' THEN 'hour_label AS \"Hora\", production AS \"PROD. LATAS\", short_cans AS \"LAT CORTAS\", trimmer_jams AS \"TRANC TRIMMER\", cans_by_short_can AS \"LAT x LAT CORTAS\", cans_by_trimmer_jam AS \"LAT x TRANC TRIM\", downtime_by_short_can_min AS \"Parada x lat cortas (min)\", downtime_by_trimmer_jam_min AS \"Parada x tranc trim (min)\", downtime_min AS \"Tiempo parada (min)\", scrap_kg AS \"Merma (kg)\", scrap_pct AS \"% Merma\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'PRINTER' THEN 'hour_label AS \"Hora\", production AS \"Producción x hora\", retrac AS \"Retrac x hora\", blow_off AS \"Blow off\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'ISPRAY' THEN 'hour_label AS \"Hora\", production AS \"Producción x hora\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' WHEN 'MINSTER' THEN 'hour_label AS \"Hora\", golpes_bobina AS \"Golpes bobina\", golpes_turno AS \"Golpes turno\", downtime_min AS \"Tiempo parada (min)\", efficiency_pct AS \"% Eficiencia\", observations AS \"Observaciones / Incidencias\"' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "chart2",
+        "label": "chart2",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'trimmer_jams AS \"Tranc. trimmer\", short_cans AS \"Latas cortas\"' WHEN 'STANDUM' THEN 'trimmer_jams AS \"Tranc. trimmer\", short_cans AS \"Latas cortas\"' WHEN 'PRINTER' THEN 'retrac AS \"Retrac\", blow_off AS \"Blow off\"' WHEN 'ISPRAY' THEN 'downtime_min AS \"Tiempo parada (min)\"' WHEN 'MINSTER' THEN 'downtime_min AS \"Tiempo parada (min)\"' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'trimmer_jams AS \"Tranc. trimmer\", short_cans AS \"Latas cortas\"' WHEN 'STANDUM' THEN 'trimmer_jams AS \"Tranc. trimmer\", short_cans AS \"Latas cortas\"' WHEN 'PRINTER' THEN 'retrac AS \"Retrac\", blow_off AS \"Blow off\"' WHEN 'ISPRAY' THEN 'downtime_min AS \"Tiempo parada (min)\"' WHEN 'MINSTER' THEN 'downtime_min AS \"Tiempo parada (min)\"' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "chart2_title",
+        "label": "chart2_title",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Merma por hora' WHEN 'STANDUM' THEN 'Merma por hora' WHEN 'PRINTER' THEN 'Retrac y blow off por hora' WHEN 'ISPRAY' THEN 'Tiempo de parada por hora (min)' WHEN 'MINSTER' THEN 'Tiempo de parada por hora (min)' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Merma por hora' WHEN 'STANDUM' THEN 'Merma por hora' WHEN 'PRINTER' THEN 'Retrac y blow off por hora' WHEN 'ISPRAY' THEN 'Tiempo de parada por hora (min)' WHEN 'MINSTER' THEN 'Tiempo de parada por hora (min)' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "g2",
+        "label": "g2",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'sum(short_cans)' WHEN 'STANDUM' THEN 'sum(short_cans)' WHEN 'PRINTER' THEN 'sum(retrac)' WHEN 'ISPRAY' THEN 'round(avg(efficiency_pct) FILTER (WHERE production > 0), 1)' WHEN 'MINSTER' THEN 'count_if(production > 0)' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'sum(short_cans)' WHEN 'STANDUM' THEN 'sum(short_cans)' WHEN 'PRINTER' THEN 'sum(retrac)' WHEN 'ISPRAY' THEN 'round(avg(efficiency_pct) FILTER (WHERE production > 0), 1)' WHEN 'MINSTER' THEN 'count_if(production > 0)' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "g2_title",
+        "label": "g2_title",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Latas cortas total' WHEN 'STANDUM' THEN 'Latas cortas total' WHEN 'PRINTER' THEN 'Retrac total' WHEN 'ISPRAY' THEN 'Eficiencia promedio (%)' WHEN 'MINSTER' THEN 'Horas con producción' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Latas cortas total' WHEN 'STANDUM' THEN 'Latas cortas total' WHEN 'PRINTER' THEN 'Retrac total' WHEN 'ISPRAY' THEN 'Eficiencia promedio (%)' WHEN 'MINSTER' THEN 'Horas con producción' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "g3",
+        "label": "g3",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'sum(trimmer_jams)' WHEN 'STANDUM' THEN 'sum(trimmer_jams)' WHEN 'PRINTER' THEN 'sum(blow_off)' WHEN 'ISPRAY' THEN 'count_if(production > 0)' WHEN 'MINSTER' THEN 'round(avg(efficiency_pct) FILTER (WHERE production > 0), 1)' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'sum(trimmer_jams)' WHEN 'STANDUM' THEN 'sum(trimmer_jams)' WHEN 'PRINTER' THEN 'sum(blow_off)' WHEN 'ISPRAY' THEN 'count_if(production > 0)' WHEN 'MINSTER' THEN 'round(avg(efficiency_pct) FILTER (WHERE production > 0), 1)' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "g3_title",
+        "label": "g3_title",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Trancamientos trimmer' WHEN 'STANDUM' THEN 'Trancamientos trimmer' WHEN 'PRINTER' THEN 'Blow off total' WHEN 'ISPRAY' THEN 'Horas con producción' WHEN 'MINSTER' THEN 'Eficiencia promedio (%)' END AS \"v\"",
+        "query": {
+          "rawSQL": "SELECT CASE '${tipo}' WHEN 'DI' THEN 'Trancamientos trimmer' WHEN 'STANDUM' THEN 'Trancamientos trimmer' WHEN 'PRINTER' THEN 'Blow off total' WHEN 'ISPRAY' THEN 'Horas con producción' WHEN 'MINSTER' THEN 'Eficiencia promedio (%)' END AS \"v\"",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 2,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 2
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Elija fecha, turno, tipo de máquina y máquina en los selectores. Para descargar datos: menú de cada panel › **Inspect › Data › Download CSV** (activar «Download for Excel»). La sección **Datos para descargar**, al final, usa «Descarga: máquinas» y «Descarga: periodo» (contado desde la fecha del turno elegida)."
+      },
+      "transparent": true
+    },
+    {
+      "id": 2,
+      "type": "barchart",
+      "title": "Producción por hora · ${maquina} · ${fecha} ${turno:text}",
+      "gridPos": {
+        "x": 0,
+        "y": 2,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT hour_label AS \"Hora\", production AS \"Producción\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}' ORDER BY slot",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "options": {
+        "xField": "Hora",
+        "showValue": "always",
+        "xTickLabelRotation": -45,
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          },
+          "unit": "locale",
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "barchart",
+      "title": "${chart2_title} · ${maquina}",
+      "gridPos": {
+        "x": 12,
+        "y": 2,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT hour_label AS \"Hora\", ${chart2:raw} FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}' ORDER BY slot",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "options": {
+        "xField": "Hora",
+        "showValue": "auto",
+        "xTickLabelRotation": -45,
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "legend": {
+          "showLegend": true,
+          "placement": "bottom",
+          "displayMode": "list"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "stacking": "normal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "lineWidth": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tranc. trimmer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B877D9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Latas cortas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Retrac"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Blow off"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tiempo parada (min)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8E8E8E"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Producción total (latas)",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT coalesce(sum(production), 0) AS \"Valor\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 0 AS min, CASE '${maquina}' WHEN 'p11' THEN 792000 WHEN 'p31' THEN 1440000 WHEN 'p32' THEN 1440000 WHEN 'di11' THEN 192000 WHEN 'di12' THEN 192000 WHEN 'di14' THEN 192000 WHEN 'di15' THEN 192000 WHEN 'di17' THEN 192000 WHEN 'di18' THEN 192000 WHEN 'standum31' THEN 192000 WHEN 'standum32' THEN 192000 WHEN 'standum33' THEN 192000 WHEN 'standum34' THEN 192000 WHEN 'standum35' THEN 192000 WHEN 'standum36' THEN 192000 WHEN 'standum37' THEN 192000 WHEN 'standum38' THEN 192000 WHEN 'minster_l1' THEN 84000 WHEN 'minster_l3' THEN 84000 WHEN 'ispray11' THEN 192000 WHEN 'ispray12' THEN 192000 WHEN 'ispray13' THEN 192000 WHEN 'ispray14' THEN 192000 WHEN 'ispray15' THEN 192000 WHEN 'ispray31' THEN 192000 WHEN 'ispray32' THEN 192000 WHEN 'ispray33' THEN 192000 WHEN 'ispray34' THEN 192000 WHEN 'ispray35' THEN 192000 WHEN 'ispray36' THEN 192000 WHEN 'ispray37' THEN 192000 WHEN 'ispray38' THEN 192000 ELSE 192000 END AS max",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          },
+          "hide": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^Valor$/",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "transformations": [
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "B",
+            "mappings": [
+              {
+                "fieldName": "max",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "min",
+                "handlerKey": "min"
+              }
+            ]
+          }
+        }
+      ],
+      "description": "Máximo del indicador = capacidad nominal de la máquina × 12 horas (D&I y STANDUM: 16.000 latas/h, sin capacidad nominal configurada). Rojo < 50 %, amarillo 50–80 %, verde ≥ 80 % de ese máximo.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "gauge",
+      "title": "${g2_title}",
+      "gridPos": {
+        "x": 6,
+        "y": 11,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT coalesce(${g2:raw}, 0) AS \"Valor\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 0 AS min, CASE '${tipo}' WHEN 'DI' THEN '50' WHEN 'STANDUM' THEN '50' WHEN 'PRINTER' THEN '1500' WHEN 'ISPRAY' THEN '100' WHEN 'MINSTER' THEN '12' END AS max",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          },
+          "hide": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^Valor$/",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "transformations": [
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "B",
+            "mappings": [
+              {
+                "fieldName": "max",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "min",
+                "handlerKey": "min"
+              }
+            ]
+          }
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#F2495C"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#B877D9",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "${g3_title}",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT coalesce(${g3:raw}, 0) AS \"Valor\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 0 AS min, CASE '${tipo}' WHEN 'DI' THEN '50' WHEN 'STANDUM' THEN '50' WHEN 'PRINTER' THEN '20000' WHEN 'ISPRAY' THEN '12' WHEN 'MINSTER' THEN '100' END AS max",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          },
+          "hide": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^Valor$/",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "transformations": [
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "B",
+            "mappings": [
+              {
+                "fieldName": "max",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "min",
+                "handlerKey": "min"
+              }
+            ]
+          }
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#B877D9"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#B877D9",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Tiempo de parada total",
+      "gridPos": {
+        "x": 18,
+        "y": 11,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT coalesce(sum(downtime_min), 0) AS \"Valor\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 0 AS min, 720 AS max",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          },
+          "hide": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^Valor$/",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "transformations": [
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "B",
+            "mappings": [
+              {
+                "fieldName": "max",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "min",
+                "handlerKey": "min"
+              }
+            ]
+          }
+        }
+      ],
+      "description": "Minutos de parada en el turno, sobre 720 (12 h). Verde < 2 h, amarillo < 5 h, rojo ≥ 5 h.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 120
+              },
+              {
+                "color": "#F2495C",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Detalle horario del turno · ${maquina} · ${fecha} ${turno:text}",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT ${cols:raw} FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND machine = '${maquina}' ORDER BY slot",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^% Eficiencia"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#F2495C",
+                      "value": null
+                    },
+                    {
+                      "color": "#FADE2A",
+                      "value": 50
+                    },
+                    {
+                      "color": "#73BF69",
+                      "value": 80
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% Merma"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Merma (kg)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^Observaciones"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 330
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^Sin producción.*",
+                      "result": {
+                        "color": "#8E8E8E",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^(Operación (normal|estándar)).*",
+                      "result": {
+                        "color": "#73BF69",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^Parada por.*",
+                      "result": {
+                        "color": "#FADE2A",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": ".+",
+                      "result": {
+                        "color": "#FF9830",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hora"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Columnas según el tipo de máquina, como en el Reporte de Streamlit. Fila de totales al pie. Observaciones: naranja = incidencia registrada en planta, amarillo = parada automática, gris = sin producción. Descargar: menú del panel › Inspect › Data › Download CSV."
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "title": "Datos para descargar · «Descarga: máquinas» y «Descarga: periodo»",
+      "panels": [
+        {
+          "id": 9,
+          "type": "table",
+          "title": "Detalle por hora (una fila por máquina y hora)",
+          "gridPos": {
+            "x": 0,
+            "y": 31,
+            "w": 24,
+            "h": 12
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-athena-datasource",
+                "uid": "${ds}"
+              },
+              "format": 1,
+              "rawSQL": "SELECT shift_date AS \"Fecha turno\", CASE shift WHEN 'day' THEN '6AM-6PM' ELSE '6PM-6AM' END AS \"Turno\", date_format(hour_start_local, '%Y-%m-%d %H:%i') AS \"Hora inicio (planta)\", hour_label AS \"Hora\", line AS \"Línea\", machine_type AS \"Tipo\", machine AS \"Máquina\", production AS \"Producción\", short_cans AS \"Latas cortas\", trimmer_jams AS \"Tranc. trimmer\", scrap_kg AS \"Merma (kg)\", scrap_pct AS \"% Merma\", efficiency_pct AS \"% Eficiencia\", downtime_min AS \"Tiempo parada (min)\", retrac AS \"Retrac\", blow_off AS \"Blow off\", golpes_bobina AS \"Golpes bobina\", golpes_turno AS \"Golpes turno\", observations AS \"Observaciones\" FROM polar_production.production_hourly WHERE machine IN (${descarga:singlequote}) AND (('${periodo}' = 'turno' AND shift_date = '${fecha}' AND shift = '${turno}') OR ('${periodo}' = 'dia' AND shift_date = '${fecha}') OR ('${periodo}' = '7d' AND shift_date BETWEEN date_format(date('${fecha}') - interval '6' day, '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = '30d' AND shift_date BETWEEN date_format(date('${fecha}') - interval '29' day, '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = 'mes' AND shift_date BETWEEN date_format(date_trunc('month', date('${fecha}')), '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = 'mes_ant' AND shift_date BETWEEN date_format(date_trunc('month', date('${fecha}')) - interval '1' month, '%Y-%m-%d') AND date_format(date_trunc('month', date('${fecha}')) - interval '1' day, '%Y-%m-%d'))) ORDER BY hour_start_utc, machine LIMIT 50000",
+              "connectionArgs": {
+                "region": "__default",
+                "catalog": "__default",
+                "database": "__default",
+                "resultReuseEnabled": false,
+                "resultReuseMaxAgeInMinutes": 60
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "locale",
+              "decimals": 0,
+              "noValue": "—",
+              "custom": {
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^% Eficiencia"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "#F2495C",
+                          "value": null
+                        },
+                        {
+                          "color": "#FADE2A",
+                          "value": 50
+                        },
+                        {
+                          "color": "#73BF69",
+                          "value": 80
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "% Merma"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Merma (kg)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "description": "Periodo: «Descarga: periodo», contado desde la fecha del turno elegida. Máquinas: «Descarga: máquinas». Descargar: menú del panel › Inspect › Data › Download CSV (activar «Download for Excel»). Máximo 50.000 filas: para rangos largos, filtrar máquinas."
+        },
+        {
+          "id": 10,
+          "type": "table",
+          "title": "Totales por turno y máquina",
+          "gridPos": {
+            "x": 0,
+            "y": 43,
+            "w": 24,
+            "h": 10
+          },
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-athena-datasource",
+                "uid": "${ds}"
+              },
+              "format": 1,
+              "rawSQL": "SELECT shift_date AS \"Fecha turno\", CASE shift WHEN 'day' THEN '6AM-6PM' ELSE '6PM-6AM' END AS \"Turno\", line AS \"Línea\", machine_type AS \"Tipo\", machine AS \"Máquina\", count(*) AS \"Horas\", sum(production) AS \"Producción\", sum(short_cans) AS \"Latas cortas\", sum(trimmer_jams) AS \"Tranc. trimmer\", round(sum(scrap_kg), 2) AS \"Merma (kg)\", round(avg(efficiency_pct) FILTER (WHERE production > 0), 2) AS \"% Eficiencia (horas activas)\", sum(downtime_min) AS \"Tiempo parada (min)\", sum(retrac) AS \"Retrac\", sum(blow_off) AS \"Blow off\" FROM polar_production.production_hourly WHERE machine IN (${descarga:singlequote}) AND (('${periodo}' = 'turno' AND shift_date = '${fecha}' AND shift = '${turno}') OR ('${periodo}' = 'dia' AND shift_date = '${fecha}') OR ('${periodo}' = '7d' AND shift_date BETWEEN date_format(date('${fecha}') - interval '6' day, '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = '30d' AND shift_date BETWEEN date_format(date('${fecha}') - interval '29' day, '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = 'mes' AND shift_date BETWEEN date_format(date_trunc('month', date('${fecha}')), '%Y-%m-%d') AND '${fecha}') OR ('${periodo}' = 'mes_ant' AND shift_date BETWEEN date_format(date_trunc('month', date('${fecha}')) - interval '1' month, '%Y-%m-%d') AND date_format(date_trunc('month', date('${fecha}')) - interval '1' day, '%Y-%m-%d'))) GROUP BY shift_date, shift, line, machine_type, machine ORDER BY shift_date, shift, line, machine_type, machine",
+              "connectionArgs": {
+                "region": "__default",
+                "catalog": "__default",
+                "database": "__default",
+                "resultReuseEnabled": false,
+                "resultReuseMaxAgeInMinutes": 60
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "locale",
+              "decimals": 0,
+              "noValue": "—",
+              "custom": {
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^% Eficiencia"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "#F2495C",
+                          "value": null
+                        },
+                        {
+                          "color": "#FADE2A",
+                          "value": 50
+                        },
+                        {
+                          "color": "#73BF69",
+                          "value": 80
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "% Merma"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Merma (kg)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "none"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "description": "Descargar: menú del panel › Inspect › Data › Download CSV."
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": []
+}
