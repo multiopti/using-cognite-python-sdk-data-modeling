@@ -430,10 +430,12 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
   `local_test.py --write` refreshes it).
   - Create an IAM user scoped to the data bucket, with keys in the Function secrets `aws-access-key` / `aws-secret-key`.
   - Schedule `*/15 * * * *`. See its README.
-- [ ] **Isolate the client in Grafana.** Workspace RonSantaTeresa also holds other clients' dashboards.
-  - Put the Polar dashboard in an Empresas Polar folder.
-  - Remove the default Viewer access from the other folders, and give Andy (and other internal viewers) explicit
-    access so they keep theirs.
+- [x] **Isolate the client in Grafana** (2026-11-19). The user exported the previous dashboards
+  (kept in `E:\source\repos\streamlit\backups\grafana_exports\`, outside git: `CogniteDataFusion-1795134077255.json`,
+  `Centro Comercial-1795095755075.json`) and removed them, so
+  the workspace now holds only the Superenvases dashboard Rafael sees.
+  - **If any other client's dashboard is added to this workspace later,** isolate by folder first: put Polar in its own
+    folder, remove the default Viewer access from the other folders, and give internal viewers explicit access.
 - [ ] **Línea 3 Grafana dashboard** -- waiting on a diagram image from the
   user showing that line's layout before it can be built (mirrors the
   existing Línea 1 dashboard).
