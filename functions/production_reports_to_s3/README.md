@@ -79,6 +79,10 @@ The initial load (2026-07-28 to 2026-11-19) was run from this PC with `local_tes
 
 ## Deploy (by hand in Fusion)
 
+**Deployed 2026-11-22:** external id `production-reports-to-s3`, Python 3.14, schedule `every-15-min`. A catch-up run
+with `{"from": "2026-11-20", "to": "2026-11-22"}` closed the gap after the manual load. If the function stops for longer
+than `LOOKBACK_HOURS`, run it by hand with `from`/`to` for the missing shift dates.
+
 1. **AWS credentials:** an IAM user just for this function, with only `s3:PutObject`, `s3:GetObject` and `s3:ListBucket`
    on `ingedaca-polar-production-data`. Put its keys in the Function's secrets `aws-access-key` and `aws-secret-key`.
    Same names as `shift-excel-report-v2`; Fusion only accepts short, lowercase names with dashes.

@@ -426,10 +426,14 @@ Files in `E:\source\repos\streamlit\node-red\` (outside this repo):
     - All queries were tested in Athena.
   - **Rafael's access:** created in the ORG IAM Identity Center (management account 842676010714) by its admin; the
     account instance created by mistake in 775232977034 was deleted.
-- [ ] **Deploy `production_reports_to_s3` in Fusion.** Until then S3 only has data up to 2026-11-19 (a manual
-  `local_test.py --write` refreshes it).
-  - Create an IAM user scoped to the data bucket, with keys in the Function secrets `aws-access-key` / `aws-secret-key`.
-  - Schedule `*/15 * * * *`. See its README.
+- [x] **Deploy `production_reports_to_s3` in Fusion** (2026-11-22). External id `production-reports-to-s3`,
+  Python 3.14, schedule `every-15-min` (`*/15 * * * *`, data `{}`).
+  - IAM user scoped to the data bucket (Put/Get/List only), created 2026-11-19; keys in the Function secrets
+    `aws-access-key` / `aws-secret-key`.
+  - Dry run OK; catch-up run `{"from": "2026-11-20", "to": "2026-11-22"}` uploaded 160 files, 0 errors. S3 is now
+    continuous from 2026-07-28.
+  - A gap longer than the 3-hour lookback (e.g. the function failing for a day) is NOT self-healing: re-run it with
+    `from`/`to` for the missing shift dates.
 - [x] **Isolate the client in Grafana** (2026-11-19). The user exported the previous dashboards
   (kept in `E:\source\repos\streamlit\backups\grafana_exports\`, outside git: `CogniteDataFusion-1795134077255.json`,
   `Centro Comercial-1795095755075.json`) and removed them, so
