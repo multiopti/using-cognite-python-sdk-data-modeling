@@ -1,0 +1,1001 @@
+{
+  "title": "Dashboard General · Superenvases",
+  "uid": "polar-dashboard-general",
+  "description": "Todas las máquinas · Línea 1 y Línea 3. Elija fecha y turno en los selectores.",
+  "tags": [
+    "empresas-polar",
+    "produccion"
+  ],
+  "timezone": "America/Caracas",
+  "editable": true,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "refresh": "15m",
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds",
+        "label": "Fuente de datos",
+        "query": "grafana-athena-datasource",
+        "regex": "/[Pp]olar/",
+        "hide": 2,
+        "current": {},
+        "options": [],
+        "refresh": 1
+      },
+      {
+        "type": "query",
+        "name": "fecha",
+        "label": "Fecha del turno",
+        "datasource": {
+          "type": "grafana-athena-datasource",
+          "uid": "${ds}"
+        },
+        "definition": "SELECT DISTINCT shift_date FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY shift_date DESC",
+        "query": {
+          "rawSQL": "SELECT DISTINCT shift_date FROM polar_production.production_hourly WHERE shift_date >= date_format(current_date - interval '90' day, '%Y-%m-%d') ORDER BY shift_date DESC",
+          "format": 1,
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        },
+        "refresh": 1,
+        "sort": 0,
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "custom",
+        "name": "turno",
+        "label": "Turno",
+        "query": "6AM-6PM : day, 6PM-6AM : night",
+        "current": {
+          "text": "6AM-6PM",
+          "value": "day"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "options": [
+          {
+            "text": "6AM-6PM",
+            "value": "day",
+            "selected": true
+          },
+          {
+            "text": "6PM-6AM",
+            "value": "night",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Eficiencia Global",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT round(avg(efficiency_pct) FILTER (WHERE production > 0), 1) AS \"Eficiencia\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Promedio del % de eficiencia en las horas con producción, todas las máquinas. Meta: 85 %.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "showPercentChange": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "noValue": "—",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Máquinas Activas",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "WITH d AS (SELECT machine, max_by(production, slot) AS p, max_by(observations, slot) AS o FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' GROUP BY machine) SELECT concat(cast(count_if(p > 0) AS varchar), ' / 32') AS \"Activas\" FROM d",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Máquinas cuya última hora reportada del turno tiene producción.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "showPercentChange": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "string",
+          "decimals": null,
+          "noValue": "—",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tiempo de Parada Total",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT sum(downtime_min) AS \"Parada\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Suma de los minutos de parada de todas las máquinas en el turno.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "showPercentChange": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "decimals": 0,
+          "noValue": "—",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Eventos de Merma",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT sum(coalesce(short_cans, 0) + coalesce(trimmer_jams, 0) + coalesce(retrac, 0) + coalesce(blow_off, 0)) AS \"Merma\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Latas cortas + trancamientos de trimmer (D&I / Standum) + retrac + blow off (Printer).",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "showPercentChange": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "noValue": "—",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "gauge",
+      "title": "Eficiencia Línea 1",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT round(avg(efficiency_pct) FILTER (WHERE production > 0), 1) AS \"Eficiencia\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND line = 'L1'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Promedio del % de eficiencia en las horas con producción de Línea 1. Rojo < 50 %, amarillo 50–85 %, verde ≥ 85 % (meta).",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "—",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Línea 1 · Producción por tipo de máquina",
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 'Producción' AS \"x\", coalesce(sum(production) FILTER (WHERE machine_type = 'MINSTER'), 0) AS \"Minster\", coalesce(sum(production) FILTER (WHERE machine_type = 'DI'), 0) AS \"D&I\", coalesce(sum(production) FILTER (WHERE machine_type = 'PRINTER'), 0) AS \"Printer\", coalesce(sum(production) FILTER (WHERE machine_type = 'ISPRAY'), 0) AS \"ISpray\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND line = 'L1'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "13 máquinas · Minster → D&I → Printer → ISpray. Producción del turno por tipo (Minster: golpes).",
+      "options": {
+        "xField": "x",
+        "showValue": "always",
+        "orientation": "vertical",
+        "barWidth": 0.9,
+        "groupWidth": 0.8,
+        "xTickLabelRotation": 0,
+        "stacking": "none",
+        "legend": {
+          "showLegend": true,
+          "placement": "bottom",
+          "displayMode": "list"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 90,
+            "gradientMode": "none",
+            "lineWidth": 0,
+            "axisPlacement": "hidden"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Minster"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0284c7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "D&I"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5B7FA6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Printer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0078D4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ISpray"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#10b981"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Línea 1 · Estado de máquinas (13)",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "WITH m(machine, line, ord) AS (VALUES ('minster_l1', 'L1', 0), ('di11', 'L1', 1), ('di12', 'L1', 2), ('di14', 'L1', 3), ('di15', 'L1', 4), ('di17', 'L1', 5), ('di18', 'L1', 6), ('p11', 'L1', 7), ('ispray11', 'L1', 8), ('ispray12', 'L1', 9), ('ispray13', 'L1', 10), ('ispray14', 'L1', 11), ('ispray15', 'L1', 12), ('minster_l3', 'L3', 13), ('standum31', 'L3', 14), ('standum32', 'L3', 15), ('standum33', 'L3', 16), ('standum34', 'L3', 17), ('standum35', 'L3', 18), ('standum36', 'L3', 19), ('standum37', 'L3', 20), ('standum38', 'L3', 21), ('p31', 'L3', 22), ('p32', 'L3', 23), ('ispray31', 'L3', 24), ('ispray32', 'L3', 25), ('ispray33', 'L3', 26), ('ispray34', 'L3', 27), ('ispray35', 'L3', 28), ('ispray36', 'L3', 29), ('ispray37', 'L3', 30), ('ispray38', 'L3', 31)), d AS (SELECT machine, max_by(production, slot) AS p, max_by(observations, slot) AS o FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' GROUP BY machine) SELECT upper(m.machine) AS maquina, CASE WHEN d.machine IS NULL THEN 0 WHEN d.p > 0 THEN 1 WHEN lower(coalesce(d.o, '')) LIKE '%falla%' THEN 3 ELSE 2 END AS estado FROM m LEFT JOIN d ON d.machine = m.machine WHERE m.line = 'L1' ORDER BY m.ord",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Según la última hora reportada del turno: Operando = con producción; Falla = «falla» en las observaciones; Detenida = sin producción; Sin datos = ninguna hora reportada.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 13,
+          "valueSize": 12
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__data.fields.maquina}",
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Sin datos",
+                  "color": "#9ca3af",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Operando",
+                  "color": "#16a34a",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Detenida",
+                  "color": "#d97706",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Falla",
+                  "color": "#dc2626",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "gauge",
+      "title": "Eficiencia Línea 3",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 4,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT round(avg(efficiency_pct) FILTER (WHERE production > 0), 1) AS \"Eficiencia\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND line = 'L3'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Promedio del % de eficiencia en las horas con producción de Línea 3. Rojo < 50 %, amarillo 50–85 %, verde ≥ 85 % (meta).",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "minVizHeight": 75,
+        "minVizWidth": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "—",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#F2495C",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 50
+              },
+              {
+                "color": "#73BF69",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Línea 3 · Producción por tipo de máquina",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "SELECT 'Producción' AS \"x\", coalesce(sum(production) FILTER (WHERE machine_type = 'MINSTER'), 0) AS \"Minster\", coalesce(sum(production) FILTER (WHERE machine_type = 'STANDUM'), 0) AS \"Standum\", coalesce(sum(production) FILTER (WHERE machine_type = 'PRINTER'), 0) AS \"Printer\", coalesce(sum(production) FILTER (WHERE machine_type = 'ISPRAY'), 0) AS \"ISpray\" FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' AND line = 'L3'",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "19 máquinas · Minster → Standum → Printer → ISpray. Producción del turno por tipo (Minster: golpes).",
+      "options": {
+        "xField": "x",
+        "showValue": "always",
+        "orientation": "vertical",
+        "barWidth": 0.9,
+        "groupWidth": 0.8,
+        "xTickLabelRotation": 0,
+        "stacking": "none",
+        "legend": {
+          "showLegend": true,
+          "placement": "bottom",
+          "displayMode": "list"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "fillOpacity": 90,
+            "gradientMode": "none",
+            "lineWidth": 0,
+            "axisPlacement": "hidden"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Minster"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0284c7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Standum"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#475569"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Printer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0078D4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ISpray"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#10b981"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Línea 3 · Estado de máquinas (19)",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-athena-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-athena-datasource",
+            "uid": "${ds}"
+          },
+          "format": 1,
+          "rawSQL": "WITH m(machine, line, ord) AS (VALUES ('minster_l1', 'L1', 0), ('di11', 'L1', 1), ('di12', 'L1', 2), ('di14', 'L1', 3), ('di15', 'L1', 4), ('di17', 'L1', 5), ('di18', 'L1', 6), ('p11', 'L1', 7), ('ispray11', 'L1', 8), ('ispray12', 'L1', 9), ('ispray13', 'L1', 10), ('ispray14', 'L1', 11), ('ispray15', 'L1', 12), ('minster_l3', 'L3', 13), ('standum31', 'L3', 14), ('standum32', 'L3', 15), ('standum33', 'L3', 16), ('standum34', 'L3', 17), ('standum35', 'L3', 18), ('standum36', 'L3', 19), ('standum37', 'L3', 20), ('standum38', 'L3', 21), ('p31', 'L3', 22), ('p32', 'L3', 23), ('ispray31', 'L3', 24), ('ispray32', 'L3', 25), ('ispray33', 'L3', 26), ('ispray34', 'L3', 27), ('ispray35', 'L3', 28), ('ispray36', 'L3', 29), ('ispray37', 'L3', 30), ('ispray38', 'L3', 31)), d AS (SELECT machine, max_by(production, slot) AS p, max_by(observations, slot) AS o FROM polar_production.production_hourly WHERE shift_date = '${fecha}' AND shift = '${turno}' GROUP BY machine) SELECT upper(m.machine) AS maquina, CASE WHEN d.machine IS NULL THEN 0 WHEN d.p > 0 THEN 1 WHEN lower(coalesce(d.o, '')) LIKE '%falla%' THEN 3 ELSE 2 END AS estado FROM m LEFT JOIN d ON d.machine = m.machine WHERE m.line = 'L3' ORDER BY m.ord",
+          "connectionArgs": {
+            "region": "__default",
+            "catalog": "__default",
+            "database": "__default",
+            "resultReuseEnabled": false,
+            "resultReuseMaxAgeInMinutes": 60
+          }
+        }
+      ],
+      "description": "Según la última hora reportada del turno: Operando = con producción; Falla = «falla» en las observaciones; Detenida = sin producción; Sin datos = ninguna hora reportada.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 13,
+          "valueSize": 12
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__data.fields.maquina}",
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Sin datos",
+                  "color": "#9ca3af",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Operando",
+                  "color": "#16a34a",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Detenida",
+                  "color": "#d97706",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Falla",
+                  "color": "#dc2626",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "Reporte de Producción",
+      "tags": [
+        "empresas-polar"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "icon": "dashboard"
+    }
+  ]
+}

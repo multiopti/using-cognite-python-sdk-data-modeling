@@ -345,7 +345,9 @@ dashboard = {
     "templating": {"list": variables},
     "panels": panels,
     "annotations": {"list": []},
-    "links": [],
+    # every other dashboard tagged empresas-polar (e.g. the Dashboard General), as header links
+    "links": [{"type": "dashboards", "title": "Dashboards Polar", "tags": ["empresas-polar"], "asDropdown": False,
+               "includeVars": False, "keepTime": False, "targetBlank": False, "icon": "dashboard"}],
 }
 out = HERE / "dashboard_produccion_athena.json"
 out.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8")
